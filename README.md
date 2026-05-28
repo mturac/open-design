@@ -217,6 +217,10 @@ The visually distinctive skills you'll most likely run first. Each ships a real 
 
 Adding a skill takes one folder. Read [`docs/skills-protocol.md`](docs/skills-protocol.md) for the extended frontmatter, fork an existing skill, restart the daemon, it appears in the picker. The catalog endpoint is `GET /api/skills`; per-skill seed assembly (template + side-file references) lives at `GET /api/skills/:id/example`.
 
+### Related skill collections
+
+- [hermes-supercode-skills](https://github.com/mturac/hermes-supercode-skills) — 13 production-grade Claude Code skills: db-whisperer, auth-architect, obs-guardian, deploy-ninja, quantum-debugger, api-sculptor + more. `npx hermes-skills install`
+
 ## Six load-bearing ideas
 
 ### 1 · We don't ship an agent. Yours is good enough.
