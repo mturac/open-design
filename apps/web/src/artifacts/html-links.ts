@@ -51,10 +51,11 @@ export function canOverwriteHtmlArtifactEntry(input: {
   });
   if (!existingIndex) return true;
   const manifest = existingIndex.artifactManifest;
+  const artifactIdentifier = input.artifactIdentifier ?? '';
   return (
-    Boolean(input.artifactIdentifier) &&
+    artifactIdentifier.length > 0 &&
     manifest?.entry === 'index.html' &&
-    manifest.metadata?.identifier === input.artifactIdentifier
+    manifest.metadata?.identifier === artifactIdentifier
   );
 }
 

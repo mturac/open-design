@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canOverwriteHtmlArtifactEntry,
   resolveHtmlArtifactFileName,
   rewriteHtmlLinksToCurrentProjectFiles,
 } from '../../src/artifacts/html-links';
@@ -27,6 +28,17 @@ describe('resolveHtmlArtifactFileName', () => {
     ).toBe('index-2.html');
   });
 
+  it('keeps index.html when overwrite ownership is proven by the caller', () => {
+    expect(
+      resolveHtmlArtifactFileName({
+        baseName: 'index',
+        ext: '.html',
+        existingFileNames: new Set(['index.html']),
+        canOverwriteExistingEntry: true,
+      }),
+    ).toBe('index.html');
+  });
+
   it('keeps numbered collision names for non-entry html artifacts', () => {
     expect(
       resolveHtmlArtifactFileName({
@@ -35,6 +47,34 @@ describe('resolveHtmlArtifactFileName', () => {
         existingFileNames: new Set(['about.html', 'about-2.html']),
       }),
     ).toBe('about-3.html');
+  });
+});
+
+describe('canOverwriteHtmlArtifactEntry', () => {
+  it('allows index.html overwrite when the existing manifest identifier matches', () => {
+    expect(
+      canOverwriteHtmlArtifactEntry({
+        baseName: 'index',
+        ext: '.html',
+        projectFiles: [
+          htmlFile('index.html', 10, { artifactIdentifier: 'index' }),
+        ],
+        artifactIdentifier: 'index',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects index.html overwrite when the existing manifest identifier is empty', () => {
+    expect(
+      canOverwriteHtmlArtifactEntry({
+        baseName: 'index',
+        ext: '.html',
+        projectFiles: [
+          htmlFile('index.html', 10, { artifactIdentifier: '' }),
+        ],
+        artifactIdentifier: '',
+      }),
+    ).toBe(false);
   });
 });
 
@@ -62,12 +102,22 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
   });
 });
 
-function htmlFile(name: string, mtime: number) {
+function htmlFile(
+  name: string,
+  mtime: number,
+  options: { artifactIdentifier?: string } = {},
+) {
   return {
     name,
     kind: 'html',
     mime: 'text/html',
     size: 1,
     mtime,
+    artifactManifest: options.artifactIdentifier !== undefined
+      ? {
+          entry: name,
+          metadata: { identifier: options.artifactIdentifier },
+        }
+      : undefined,
   };
 }
