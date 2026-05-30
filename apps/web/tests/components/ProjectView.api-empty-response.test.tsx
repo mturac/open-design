@@ -643,6 +643,44 @@ describe('ProjectView API empty response handling', () => {
     expect(content).toContain('href="about-2.html"');
   });
 
+  it('rewrites child links for legacy multipage artifacts without group metadata', async () => {
+    mockedFetchProjectFiles.mockResolvedValue([
+      htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
+      htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
+      htmlProjectFile('about-2.html', 40, { artifactIdentifier: 'about' }),
+    ] as never);
+    mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index.html', 50) as never);
+    const artifact =
+      '<artifact identifier="index" type="text/html" title="Multipage Site">' +
+      '<!doctype html><html><head><title>Home</title></head><body>' +
+      '<main><h1>Home</h1><a href="about.html">About</a></main>' +
+      '</body></html>' +
+      '</artifact>';
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta(artifact);
+      handlers.onDone('');
+    });
+    renderProjectView();
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalled();
+    });
+    const [, fileName, content, options] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
+    expect(fileName).toBe('index.html');
+    expect(content).toContain('href="about-2.html"');
+    expect(options?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
+      'html-artifact:index.html',
+    );
+  });
+
   it('injects ElevenLabs voice options into API-mode audio project prompts', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

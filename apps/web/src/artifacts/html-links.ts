@@ -84,38 +84,61 @@ function buildLatestHtmlFileIndex(
   projectFiles: readonly HtmlLinkProjectFile[],
   options: HtmlLinkRewriteOptions,
 ): Map<string, string> {
-  const latest = new Map<string, HtmlLinkProjectFile>();
+  const groupedLatest = new Map<string, HtmlLinkProjectFile>();
+  const legacyLatest = new Map<string, HtmlLinkProjectFile>();
+  const groupedFamilies = new Set<string>();
   const artifactGroupIdentifier = normalizeOptionalIdentifier(options.artifactGroupIdentifier);
   for (const file of projectFiles) {
     if (!isHtmlProjectFile(file)) continue;
     const key = htmlFileFamilyKey(file.name);
     if (!key) continue;
-    if (!htmlFileManifestMatchesFamily(file, key, artifactGroupIdentifier)) continue;
-    const current = latest.get(key);
-    if (!current || file.mtime > current.mtime) latest.set(key, file);
+    const manifestMatch = htmlFileManifestFamilyMatch(file, key);
+    if (!manifestMatch) continue;
+
+    if (manifestMatch.artifactGroupIdentifier !== null) {
+      groupedFamilies.add(key);
+    }
+
+    if (
+      artifactGroupIdentifier !== null &&
+      manifestMatch.artifactGroupIdentifier === artifactGroupIdentifier
+    ) {
+      const current = groupedLatest.get(key);
+      if (!current || file.mtime > current.mtime) groupedLatest.set(key, file);
+      continue;
+    }
+
+    if (manifestMatch.artifactGroupIdentifier === null) {
+      const current = legacyLatest.get(key);
+      if (!current || file.mtime > current.mtime) legacyLatest.set(key, file);
+    }
+  }
+
+  const latest = new Map<string, HtmlLinkProjectFile>();
+  for (const [key, file] of legacyLatest) {
+    if (!groupedFamilies.has(key)) latest.set(key, file);
+  }
+  for (const [key, file] of groupedLatest) {
+    latest.set(key, file);
   }
   return new Map(Array.from(latest, ([key, file]) => [key, file.name]));
 }
 
-function htmlFileManifestMatchesFamily(
+function htmlFileManifestFamilyMatch(
   file: HtmlLinkProjectFile,
   familyKey: string,
-  artifactGroupIdentifier: string | null,
-): boolean {
+): { artifactGroupIdentifier: string | null } | null {
   const identifier = file.artifactManifest?.metadata?.identifier;
-  if (typeof identifier !== 'string') return false;
+  if (typeof identifier !== 'string') return null;
   const normalizedIdentifier = normalizeArtifactIdentifier(identifier);
-  if (!normalizedIdentifier) return false;
-  if (normalizedIdentifier !== htmlFileFamilyIdentifier(familyKey)) return false;
+  if (!normalizedIdentifier) return null;
+  if (normalizedIdentifier !== htmlFileFamilyIdentifier(familyKey)) return null;
 
-  const fileGroupIdentifier = normalizeOptionalIdentifier(
-    file.artifactManifest?.metadata?.artifactGroupIdentifier,
-  );
-  return (
-    artifactGroupIdentifier !== null &&
-    fileGroupIdentifier !== null &&
-    artifactGroupIdentifier === fileGroupIdentifier
-  );
+  return {
+    artifactGroupIdentifier: normalizeOptionalIdentifier(
+      file.artifactManifest?.metadata?.artifactGroupIdentifier,
+    ),
+  };
 }
 
 function isHtmlProjectFile(file: HtmlLinkProjectFile): boolean {

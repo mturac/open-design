@@ -146,6 +146,40 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
     expect(out).toContain('href="about.html"');
     expect(out).not.toContain('href="about-2.html"');
   });
+
+  it('falls back to legacy same-identifier files when no group-tagged candidates exist', () => {
+    const html =
+      '<!doctype html><html><body>' +
+      '<a href="about.html">About</a>' +
+      '</body></html>';
+
+    const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
+      htmlFile('about.html', 10, { artifactIdentifier: 'about' }),
+      htmlFile('about-2.html', 40, { artifactIdentifier: 'about' }),
+    ], { artifactGroupIdentifier: 'site-a' });
+
+    expect(out).toContain('href="about-2.html"');
+  });
+
+  it('does not fall back to legacy files when a group-tagged candidate family exists', () => {
+    const html =
+      '<!doctype html><html><body>' +
+      '<a href="about.html">About</a>' +
+      '</body></html>';
+
+    const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
+      htmlFile('about.html', 10, { artifactIdentifier: 'about' }),
+      htmlFile('about-2.html', 20, { artifactIdentifier: 'about' }),
+      htmlFile('about-3.html', 40, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'site-b',
+      }),
+    ], { artifactGroupIdentifier: 'site-a' });
+
+    expect(out).toContain('href="about.html"');
+    expect(out).not.toContain('href="about-2.html"');
+    expect(out).not.toContain('href="about-3.html"');
+  });
 });
 
 function htmlFile(
