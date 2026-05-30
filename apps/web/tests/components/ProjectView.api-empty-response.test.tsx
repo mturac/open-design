@@ -561,8 +561,8 @@ describe('ProjectView API empty response handling', () => {
   it('keeps regenerated multipage artifact entry at index.html and rewrites child links', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
-      htmlProjectFile('about.html', 20),
-      htmlProjectFile('about-2.html', 40),
+      htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
+      htmlProjectFile('about-2.html', 40, { artifactIdentifier: 'about' }),
     ] as never);
     mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index.html', 50) as never);
     const artifact =
@@ -596,8 +596,8 @@ describe('ProjectView API empty response handling', () => {
   it('does not overwrite an unrelated existing index.html when saving a multipage artifact', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10),
-      htmlProjectFile('about.html', 20),
-      htmlProjectFile('about-2.html', 40),
+      htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
+      htmlProjectFile('about-2.html', 40, { artifactIdentifier: 'about' }),
     ] as never);
     mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index-2.html', 50) as never);
     const artifact =

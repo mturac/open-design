@@ -89,10 +89,10 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
       '</body></html>';
 
     const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
-      htmlFile('about.html', 10),
-      htmlFile('about-2.html', 30),
-      htmlFile('contact.html', 20),
-      htmlFile('contact-2.html', 40),
+      htmlFile('about.html', 10, { artifactIdentifier: 'about' }),
+      htmlFile('about-2.html', 30, { artifactIdentifier: 'about' }),
+      htmlFile('contact.html', 20, { artifactIdentifier: 'contact' }),
+      htmlFile('contact-2.html', 40, { artifactIdentifier: 'contact' }),
     ]);
 
     expect(out).toContain('href="about-2.html"');
@@ -109,12 +109,27 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
       '</body></html>';
 
     const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
-      htmlFile('index.html', 10),
-      htmlFile('index-2.html', 40),
+      htmlFile('index.html', 10, { artifactIdentifier: 'index' }),
+      htmlFile('index-2.html', 40, { artifactIdentifier: 'index' }),
     ]);
 
     expect(out).toContain('href="index-2.html"');
     expect(out).toContain('href="./index-2.html#top"');
+  });
+
+  it('does not rewrite to an unrelated newer numbered html file', () => {
+    const html =
+      '<!doctype html><html><body>' +
+      '<a href="about.html">About</a>' +
+      '</body></html>';
+
+    const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
+      htmlFile('about.html', 10, { artifactIdentifier: 'about' }),
+      htmlFile('about-2.html', 40, { artifactIdentifier: 'other-about' }),
+    ]);
+
+    expect(out).toContain('href="about.html"');
+    expect(out).not.toContain('href="about-2.html"');
   });
 });
 

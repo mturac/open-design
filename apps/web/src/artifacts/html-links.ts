@@ -81,10 +81,19 @@ function buildLatestHtmlFileIndex(projectFiles: readonly HtmlLinkProjectFile[]):
     if (!isHtmlProjectFile(file)) continue;
     const key = htmlFileFamilyKey(file.name);
     if (!key) continue;
+    if (!htmlFileManifestMatchesFamily(file, key)) continue;
     const current = latest.get(key);
     if (!current || file.mtime > current.mtime) latest.set(key, file);
   }
   return new Map(Array.from(latest, ([key, file]) => [key, file.name]));
+}
+
+function htmlFileManifestMatchesFamily(file: HtmlLinkProjectFile, familyKey: string): boolean {
+  const identifier = file.artifactManifest?.metadata?.identifier;
+  if (typeof identifier !== 'string') return false;
+  const normalizedIdentifier = normalizeArtifactIdentifier(identifier);
+  if (!normalizedIdentifier) return false;
+  return normalizedIdentifier === htmlFileFamilyIdentifier(familyKey);
 }
 
 function isHtmlProjectFile(file: HtmlLinkProjectFile): boolean {
@@ -149,6 +158,21 @@ function htmlFileFamilyKey(pathname: string): string | null {
   const ext = fileName.slice(dot).toLowerCase();
   const familyStem = stem.replace(/-\d+$/, '');
   return `${directory}${familyStem}${ext}`.replace(/^\.\//, '');
+}
+
+function htmlFileFamilyIdentifier(familyKey: string): string {
+  const slash = familyKey.lastIndexOf('/');
+  const fileName = slash >= 0 ? familyKey.slice(slash + 1) : familyKey;
+  const dot = fileName.lastIndexOf('.');
+  const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+  return normalizeArtifactIdentifier(stem);
+}
+
+function normalizeArtifactIdentifier(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function preserveRelativePrefix(originalPathname: string, latestName: string): string {
