@@ -68,6 +68,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   // saved baseUrl/model before applying the current migration version.
   apiProtocol: 'anthropic',
   apiVersion: '',
+  anthropicBaseUrlMode: 'api-root',
   apiProtocolConfigs: {},
   configMigrationVersion: CONFIG_MIGRATION_VERSION,
   apiProviderBaseUrl: 'https://api.anthropic.com',

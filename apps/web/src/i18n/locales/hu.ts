@@ -339,6 +339,11 @@ export const hu: Dict = {
   'settings.azureDeploymentModelHint': 'Azure OpenAI esetén ez a mező a /openai/deployments/<model> deployment neveként szerepel. Add meg az Azure-ban létrehozott deployment nevét.',
   'settings.azureModelFetchHint': 'Add meg a telepítés nevét az Azure-erőforrásodból. Az Azure-telepítések nem kérhetők le automatikusan.',
   'settings.apiVersion': 'API-verzió',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'Képgenerálási modell',
   'settings.byokVideoModel': 'Videógenerálási modell',
   'settings.byokVideoI2vHint': 'Kép-videó modell: referenciakép szükséges (különben a projekt legújabb képét használja automatikusan)',

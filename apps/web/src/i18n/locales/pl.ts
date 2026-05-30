@@ -339,6 +339,11 @@ export const pl: Dict = {
   'settings.azureDeploymentModelHint': 'Dla Azure OpenAI to pole jest używane jako nazwa wdrożenia w /openai/deployments/<model>. Wpisz nazwę wdrożenia utworzonego w Azure.',
   'settings.azureModelFetchHint': 'Wprowadź nazwę wdrożenia z Twojego zasobu Azure. Wdrożeń Azure nie można pobrać automatycznie.',
   'settings.apiVersion': 'Wersja API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'Model generowania obrazów',
   'settings.byokVideoModel': 'Model generowania wideo',
   'settings.byokVideoI2vHint': 'Model obraz-na-wideo: wymagany obraz referencyjny (w innym razie użyty zostanie najnowszy obraz w projekcie)',

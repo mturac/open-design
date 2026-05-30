@@ -339,6 +339,11 @@ export const esES: Dict = {
   'settings.azureDeploymentModelHint': 'Para Azure OpenAI, este campo se usa como nombre del despliegue en /openai/deployments/<model>. Introduce el nombre del despliegue que creaste en Azure.',
   'settings.azureModelFetchHint': 'Introduce el nombre de la implementación de tu recurso de Azure. Las implementaciones de Azure no se pueden obtener automáticamente.',
   'settings.apiVersion': 'Versión de API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'Modelo de generación de imágenes',
   'settings.byokVideoModel': 'Modelo de generación de vídeo',
   'settings.byokVideoI2vHint': 'Modelo de imagen a vídeo: se requiere una imagen de referencia (si no eliges una, se usa la más reciente del proyecto)',

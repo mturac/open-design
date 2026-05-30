@@ -1,4 +1,4 @@
-import type { ConnectionTestProtocol } from './connectionTest';
+import type { AnthropicBaseUrlMode, ConnectionTestProtocol } from './connectionTest';
 import type { ReasoningExecutionRequestFields } from './reasoningExecution';
 
 // Shared DTOs for the `/api/projects/:id/finalize/<provider>` family of
@@ -39,6 +39,9 @@ export interface FinalizeProviderRequest extends ReasoningExecutionRequestFields
   baseUrl?: string;
   model: string;
   maxTokens?: number;
+  // Anthropic only. The default treats baseUrl as an API root and appends
+  // /v1/messages; messages-endpoint uses baseUrl directly.
+  anthropicBaseUrlMode?: AnthropicBaseUrlMode;
   /** Azure OpenAI only. Defaults at the daemon when omitted. */
   apiVersion?: string;
 }

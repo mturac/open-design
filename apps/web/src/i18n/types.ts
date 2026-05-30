@@ -352,6 +352,10 @@ export interface Dict {
   'settings.azureDeploymentModelHint': string;
   'settings.azureModelFetchHint': string;
   'settings.apiVersion': string;
+  'settings.anthropicBaseUrlMode': string;
+  'settings.anthropicBaseUrlModeRoot': string;
+  'settings.anthropicBaseUrlModeMessages': string;
+  'settings.anthropicBaseUrlModeHint': string;
   'settings.byokImageModel': string;
   'settings.byokVideoModel': string;
   'settings.byokVideoI2vHint': string;

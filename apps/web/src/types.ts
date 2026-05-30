@@ -1,4 +1,5 @@
 import type {
+  AnthropicBaseUrlMode,
   AgentInfo,
   AgentDiagnostic,
   AgentFixIntent,
@@ -237,6 +238,7 @@ export interface ApiProtocolConfig {
   baseUrl: string;
   model: string;
   apiVersion?: string;
+  anthropicBaseUrlMode?: AnthropicBaseUrlMode;
   apiProviderBaseUrl?: string | null;
   /** SenseAudio BYOK only — default image model the daemon-side
    *  `generate_image` tool uses when the LLM doesn't pass one. Carries
@@ -369,6 +371,7 @@ export interface AppConfig {
   model: string;
   apiProtocol?: ApiProtocol;
   apiVersion?: string;
+  anthropicBaseUrlMode?: AnthropicBaseUrlMode;
   /** SenseAudio BYOK only — default image model for the daemon-side
    *  generate_image tool. Mirrors apiProtocolConfigs.senseaudio.byokImageModel
    *  so the active protocol's value lives at the top level (consistent

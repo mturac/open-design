@@ -339,6 +339,11 @@ export const ja: Dict = {
   'settings.azureDeploymentModelHint': 'Azure OpenAI では、このフィールドが /openai/deployments/<model> のデプロイ名として使われます。Azure で作成したデプロイ名を入力してください。',
   'settings.azureModelFetchHint': 'Azure リソースのデプロイ名を入力してください。Azure のデプロイは自動取得できません。',
   'settings.apiVersion': 'API バージョン',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': '画像生成モデル',
   'settings.byokVideoModel': '動画生成モデル',
   'settings.byokVideoI2vHint': '画像から動画モデル:参照画像が必要です(指定しない場合はプロジェクト内の最新画像を自動使用)',

@@ -339,6 +339,11 @@ export const th: Dict = {
   'settings.azureDeploymentModelHint': 'สำหรับ Azure OpenAI ฟิลด์นี้ใช้เป็นชื่อ Deployment ใน /openai/deployments/<model> ป้อนชื่อ Deployment ที่คุณสร้างใน Azure',
   'settings.azureModelFetchHint': 'กรอกชื่อ deployment จากทรัพยากร Azure ของคุณ Azure deployment ไม่สามารถดึงข้อมูลอัตโนมัติได้',
   'settings.apiVersion': 'เวอร์ชัน API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'โมเดลสร้างภาพ',
   'settings.byokVideoModel': 'โมเดลสร้างวิดีโอ',
   'settings.byokVideoI2vHint': 'โมเดลภาพเป็นวิดีโอ: ต้องมีภาพอ้างอิง (หากไม่ระบุ จะใช้ภาพล่าสุดในโปรเจกต์โดยอัตโนมัติ)',

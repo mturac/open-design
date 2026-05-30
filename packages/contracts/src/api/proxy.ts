@@ -1,3 +1,4 @@
+import type { AnthropicBaseUrlMode } from './connectionTest';
 import type { ReasoningExecutionRequestFields } from './reasoningExecution';
 
 export type ProxyMessageRole = 'system' | 'user' | 'assistant' | 'tool';
@@ -36,6 +37,9 @@ export interface ProxyStreamRequest extends ReasoningExecutionRequestFields {
   maxTokens?: number;
   // Azure OpenAI only. Defaults at the daemon when omitted.
   apiVersion?: string;
+  // Anthropic only. The default treats baseUrl as an API root and appends
+  // /v1/messages; messages-endpoint uses baseUrl directly.
+  anthropicBaseUrlMode?: AnthropicBaseUrlMode;
 }
 
 export interface ProxyStreamStartPayload {

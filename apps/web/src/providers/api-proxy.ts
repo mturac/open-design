@@ -60,6 +60,7 @@ export async function streamProxyEndpoint(
         messages,
         maxTokens: effectiveMaxTokens(cfg),
         apiVersion: cfg.apiVersion,
+        anthropicBaseUrlMode: cfg.anthropicBaseUrlMode,
         ...(context?.projectId ? { projectId: context.projectId } : {}),
         ...(context?.byokImageModel
           ? { byokImageModel: context.byokImageModel }

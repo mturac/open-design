@@ -339,6 +339,11 @@ export const fa: Dict = {
   'settings.azureDeploymentModelHint': 'در Azure OpenAI، این فیلد به عنوان نام استقرار در /openai/deployments/<model> استفاده می‌شود. نام استقراری را که در Azure ساخته‌اید وارد کنید.',
   'settings.azureModelFetchHint': 'نام deployment را از منبع Azure خود وارد کنید. deployment‌های Azure را نمی‌توان به‌صورت خودکار دریافت کرد.',
   'settings.apiVersion': 'نسخه API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'مدل تولید تصویر',
   'settings.byokVideoModel': 'مدل تولید ویدیو',
   'settings.byokVideoI2vHint': 'مدل تصویر به ویدیو: تصویر مرجع لازم است (در غیر این صورت آخرین تصویر پروژه به‌طور خودکار استفاده می‌شود)',

@@ -459,8 +459,17 @@ export function InlineModelSwitcher({
         config.baseUrl,
         config.apiKey,
         config.apiVersion ?? '',
+        apiProtocol === 'anthropic'
+          ? config.anthropicBaseUrlMode ?? 'api-root'
+          : 'api-root',
       ),
-    [apiProtocol, config.apiKey, config.apiVersion, config.baseUrl],
+    [
+      apiProtocol,
+      config.anthropicBaseUrlMode,
+      config.apiKey,
+      config.apiVersion,
+      config.baseUrl,
+    ],
   );
   const fetchedApiModelOptions = providerModelsCache?.[providerModelsKey] ?? [];
 

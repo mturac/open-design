@@ -339,6 +339,11 @@ export const uk: Dict = {
   'settings.azureDeploymentModelHint': 'Для Azure OpenAI це поле використовується як назва розгортання в /openai/deployments/<model>. Введіть назву розгортання, створену в Azure.',
   'settings.azureModelFetchHint': 'Введіть назву розгортання з вашого ресурсу Azure. Розгортання Azure не можна отримати автоматично.',
   'settings.apiVersion': 'Версія API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'Модель генерації зображень',
   'settings.byokVideoModel': 'Модель генерації відео',
   'settings.byokVideoI2vHint': 'Модель «зображення у відео»: потрібне референсне зображення (інакше використовується найновіше зображення проєкту)',

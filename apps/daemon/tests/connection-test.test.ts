@@ -312,6 +312,31 @@ describe('POST /api/provider/models', () => {
     });
   });
 
+  it('does not fetch Anthropic models when Base URL is a full Messages endpoint', async () => {
+    const fetchMock = vi.fn((input: FetchInput, init?: FetchInit) => {
+      if (String(input).startsWith(baseUrl)) return realFetch(input, init);
+      return Promise.resolve(jsonResponse({ data: [] }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await realFetch(`${baseUrl}/api/provider/models`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        protocol: 'anthropic',
+        baseUrl: 'https://relay.example.com/anthropic/v1/messages',
+        apiKey: 'sk-ant',
+        anthropicBaseUrlMode: 'messages-endpoint',
+      }),
+    });
+
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      kind: 'unsupported_protocol',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('lists only Gemini models that support generateContent', async () => {
     const fetchMock = passThroughOrUpstream((url) => {
       expect(url).toBe(
@@ -565,14 +590,15 @@ describe('POST /api/provider/models', () => {
 
 describe('POST /api/test/connection provider mode', () => {
   it('reports success and returns the model sample for an Anthropic 200', async () => {
-    vi.stubGlobal(
-      'fetch',
-      passThroughOrUpstream(() =>
-        jsonResponse({
-          content: [{ type: 'text', text: 'ok' }],
-        }),
-      ),
-    );
+    const fetchMock = vi.fn((input: FetchInput, init?: FetchInit) => {
+      const url = String(input);
+      if (url.startsWith(baseUrl)) return realFetch(input, init);
+      expect(url).toBe('https://api.anthropic.com/v1/messages');
+      return Promise.resolve(jsonResponse({
+        content: [{ type: 'text', text: 'ok' }],
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const res = await realFetch(`${baseUrl}/api/test/connection`, {
       method: 'POST',
@@ -591,6 +617,41 @@ describe('POST /api/test/connection provider mode', () => {
     expect(body.kind).toBe('success');
     expect(body.model).toBe('claude-sonnet-4-5');
     expect(body.sample).toBe('ok');
+  });
+
+  it('uses the Anthropic Base URL directly when it is configured as a Messages endpoint', async () => {
+    const fetchMock = vi.fn((input: FetchInput, init?: FetchInit) => {
+      const url = String(input);
+      if (url.startsWith(baseUrl)) return realFetch(input, init);
+      expect(url).toBe('https://relay.example.com/custom/messages');
+      return Promise.resolve(jsonResponse({
+        content: [{ type: 'text', text: 'ok' }],
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await realFetch(`${baseUrl}/api/test/connection`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'provider',
+        protocol: 'anthropic',
+        baseUrl: 'https://relay.example.com/custom/messages',
+        apiKey: 'sk-ant-test',
+        model: 'claude-sonnet-4-5',
+        anthropicBaseUrlMode: 'messages-endpoint',
+      }),
+    });
+
+    await expect(res.json()).resolves.toMatchObject({
+      ok: true,
+      kind: 'success',
+      sample: 'ok',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://relay.example.com/custom/messages',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('redacts submitted keys from success samples', async () => {

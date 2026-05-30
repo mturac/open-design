@@ -339,6 +339,11 @@ export const ar: Dict = {
   'settings.azureDeploymentModelHint': 'في Azure OpenAI، يُستخدم هذا الحقل كاسم النشر في /openai/deployments/<model>. أدخل اسم النشر الذي أنشأته في Azure.',
   'settings.azureModelFetchHint': 'أدخل اسم النشر من مورد Azure الخاص بك. لا يمكن جلب عمليات نشر Azure تلقائيًا.',
   'settings.apiVersion': 'إصدار API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'نموذج إنشاء الصور',
   'settings.byokVideoModel': 'نموذج إنشاء الفيديو',
   'settings.byokVideoI2vHint': 'نموذج صورة-إلى-فيديو: مطلوب صورة مرجعية (يُستخدم أحدث صورة في المشروع تلقائيًا إن لم تحددها)',

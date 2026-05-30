@@ -222,6 +222,10 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
           apiKey: body.apiKey,
           apiVersion:
             typeof body.apiVersion === 'string' ? body.apiVersion : undefined,
+          anthropicBaseUrlMode:
+            body.anthropicBaseUrlMode === 'messages-endpoint'
+              ? 'messages-endpoint'
+              : undefined,
           signal: controller.signal,
           requestInit: proxyDispatcher.requestInit,
         });
@@ -298,6 +302,10 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
             model: body.model,
             apiVersion:
               typeof body.apiVersion === 'string' ? body.apiVersion : undefined,
+            anthropicBaseUrlMode:
+              body.anthropicBaseUrlMode === 'messages-endpoint'
+                ? 'messages-endpoint'
+                : undefined,
             signal: controller.signal,
           });
           return res.json(result);
@@ -452,6 +460,12 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
       : `${trimmed}/v1${path}`;
     return url.toString();
   };
+
+  const anthropicMessagesUrl = (baseUrl: string, mode: unknown) => (
+    mode === 'messages-endpoint'
+      ? baseUrl
+      : appendVersionedApiPath(baseUrl, '/messages')
+  );
 
   const collectSseFrame = (frame: string) => {
     const lines = frame.replace(/\r/g, '').split('\n');
@@ -896,7 +910,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     /** @type {Partial<ProxyStreamRequest>} */
     const proxyBody = req.body || {};
     if (rejectProxyPluginContext(proxyBody, res)) return;
-    const { baseUrl, apiKey, model, systemPrompt, messages, maxTokens } =
+    const { baseUrl, apiKey, model, systemPrompt, messages, maxTokens, anthropicBaseUrlMode } =
       proxyBody;
     if (!baseUrl || !apiKey || !model) {
       return sendApiError(
@@ -925,7 +939,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     });
     if (reasoningDenial) return sendReasoningEgressDenial(res, reasoningDenial);
 
-    const url = appendVersionedApiPath(baseUrl, '/messages');
+    const url = anthropicMessagesUrl(baseUrl, anthropicBaseUrlMode);
     console.log(
       `[proxy:anthropic] ${req.method} ${validated.parsed!.hostname} model=${model}`,
     );

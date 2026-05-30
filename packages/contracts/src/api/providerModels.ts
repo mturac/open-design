@@ -1,4 +1,8 @@
-import type { ConnectionTestKind, ConnectionTestProtocol } from './connectionTest';
+import type {
+  AnthropicBaseUrlMode,
+  ConnectionTestKind,
+  ConnectionTestProtocol,
+} from './connectionTest';
 import type { ReasoningExecutionRequestFields } from './reasoningExecution';
 import type { AgentModelOption } from './registry';
 
@@ -11,6 +15,8 @@ export interface ProviderModelsRequest extends ReasoningExecutionRequestFields {
   protocol: ConnectionTestProtocol;
   baseUrl: string;
   apiKey: string;
+  // Anthropic only. Model discovery is only available when baseUrl is an API root.
+  anthropicBaseUrlMode?: AnthropicBaseUrlMode;
   // Azure only. Kept in the contract so the request shape can stay aligned
   // with provider testing, even though Azure model discovery is not supported.
   apiVersion?: string;

@@ -66,6 +66,7 @@ describe('SettingsDialog API protocol switching', () => {
       apiKey: 'anthropic-key',
       apiProviderBaseUrl: null,
       baseUrl: 'https://my-proxy.example.com',
+      anthropicBaseUrlMode: 'messages-endpoint',
       model: 'my-model',
     };
 
@@ -78,12 +79,14 @@ describe('SettingsDialog API protocol switching', () => {
       baseUrl: 'https://my-proxy.example.com',
       model: 'my-model',
       apiProviderBaseUrl: null,
+      anthropicBaseUrlMode: undefined,
     });
     expect(next.apiProtocolConfigs?.anthropic).toMatchObject({
       apiKey: 'anthropic-key',
       baseUrl: 'https://my-proxy.example.com',
       model: 'my-model',
       apiProviderBaseUrl: null,
+      anthropicBaseUrlMode: 'messages-endpoint',
     });
   });
 

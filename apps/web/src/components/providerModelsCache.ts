@@ -16,12 +16,14 @@ export function providerModelsCacheKey(
   baseUrl: string,
   apiKey: string,
   apiVersion = '',
+  anthropicBaseUrlMode = 'api-root',
 ): string {
   return [
     protocol,
     baseUrl.trim().replace(/\/+$/, ''),
     fingerprintSecret(apiKey.trim()),
     protocol === 'azure' ? apiVersion.trim() : '',
+    protocol === 'anthropic' ? anthropicBaseUrlMode : '',
   ].join('\n');
 }
 

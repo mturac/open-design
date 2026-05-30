@@ -339,6 +339,11 @@ export const tr: Dict = {
   'settings.azureDeploymentModelHint': 'Azure OpenAI icin bu alan /openai/deployments/<model> icindeki dagitim adi olarak kullanilir. Azureda olusturdugunuz dagitim adini girin.',
   'settings.azureModelFetchHint': 'Azure kaynağınızdaki dağıtım adını girin. Azure dağıtımları otomatik olarak getirilemez.',
   'settings.apiVersion': 'API sürümü',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'Görüntü oluşturma modeli',
   'settings.byokVideoModel': 'Video oluşturma modeli',
   'settings.byokVideoI2vHint': 'Görüntüden videoya modeli: referans görüntü gerekir (belirtmezseniz projedeki en yeni görüntü kullanılır)',

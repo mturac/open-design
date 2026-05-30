@@ -339,6 +339,11 @@ export const zhTW: Dict = {
   'settings.azureDeploymentModelHint': '對於 Azure OpenAI，此欄位會作為 /openai/deployments/<model> 中的部署名稱使用。請填入你在 Azure 中建立的部署名稱。',
   'settings.azureModelFetchHint': '請輸入您 Azure 資源中的部署名稱。Azure 部署無法自動擷取。',
   'settings.apiVersion': 'API 版本',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL 類型',
+  'settings.anthropicBaseUrlModeRoot': 'API root（自動附加 /v1/messages）',
+  'settings.anthropicBaseUrlModeMessages': '完整 Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    '標準 Anthropic 相容提供方請使用 API root。只有在提供方已給出完整 Messages URL 時，才選擇完整 endpoint。',
   'settings.byokImageModel': '圖片生成模型',
   'settings.byokVideoModel': '影片生成模型',
   'settings.byokVideoI2vHint': '圖生視頻模型:需要參考圖(未指定時自動使用專案中最新的圖片)',

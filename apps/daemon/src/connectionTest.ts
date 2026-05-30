@@ -688,6 +688,13 @@ function appendVersionedApiPath(baseUrl: string, suffix: string): string {
   return url.toString();
 }
 
+function anthropicMessagesUrl(input: ProviderTestRequest): string {
+  if (input.anthropicBaseUrlMode === 'messages-endpoint') {
+    return String(input.baseUrl);
+  }
+  return appendVersionedApiPath(String(input.baseUrl), '/messages');
+}
+
 function truncateSample(text: unknown): string {
   if (typeof text !== 'string') return '';
   const trimmed = text.replace(/\s+/g, ' ').trim();
@@ -1043,7 +1050,7 @@ function buildProviderCall(input: ProviderTestRequest): ProviderCallShape {
   switch (input.protocol) {
     case 'anthropic':
       return {
-        url: appendVersionedApiPath(baseUrl, '/messages'),
+        url: anthropicMessagesUrl(input),
         headers: {
           'content-type': 'application/json',
           'x-api-key': apiKey,

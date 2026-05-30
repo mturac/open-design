@@ -1118,12 +1118,14 @@ function OnboardingView({
     config.model.trim(),
     config.apiKey.trim(),
     config.apiVersion?.trim() ?? '',
+    apiProtocol === 'anthropic' ? config.anthropicBaseUrlMode ?? 'api-root' : '',
   ].join('\n');
   const providerModelsInputKey = providerModelsCacheKey(
     apiProtocol,
-    config.baseUrl,
-    config.apiKey,
-    config.apiVersion ?? '',
+    config.baseUrl.trim().replace(/\/+$/, ''),
+    config.apiKey.trim(),
+    config.apiVersion?.trim() ?? '',
+    apiProtocol === 'anthropic' ? config.anthropicBaseUrlMode ?? 'api-root' : '',
   );
   providerModelAutoSelectRef.current = {
     model: config.model,
@@ -1561,6 +1563,7 @@ function OnboardingView({
       baseUrl: config.baseUrl,
       model: config.model,
       apiVersion: config.apiVersion ?? '',
+      anthropicBaseUrlMode: config.anthropicBaseUrlMode ?? 'api-root',
       apiProviderBaseUrl: config.apiProviderBaseUrl ?? null,
     };
     const nextProtocolConfig: ApiProtocolConfig = {
@@ -1575,6 +1578,10 @@ function OnboardingView({
       baseUrl: nextProtocolConfig.baseUrl,
       model: nextProtocolConfig.model,
       apiVersion: protocol === 'azure' ? (nextProtocolConfig.apiVersion ?? '') : '',
+      anthropicBaseUrlMode:
+        protocol === 'anthropic'
+          ? (nextProtocolConfig.anthropicBaseUrlMode ?? 'api-root')
+          : undefined,
       apiProviderBaseUrl: nextProtocolConfig.apiProviderBaseUrl ?? null,
       apiProtocolConfigs: {
         ...(config.apiProtocolConfigs ?? {}),
@@ -2048,6 +2055,10 @@ function OnboardingView({
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         model: config.model,
+        anthropicBaseUrlMode:
+          apiProtocol === 'anthropic'
+            ? (config.anthropicBaseUrlMode ?? 'api-root')
+            : undefined,
         apiVersion:
           apiProtocol === 'azure'
             ? config.apiVersion?.trim() || undefined
@@ -2094,6 +2105,10 @@ function OnboardingView({
         protocol: apiProtocol,
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
+        anthropicBaseUrlMode:
+          apiProtocol === 'anthropic'
+            ? (config.anthropicBaseUrlMode ?? 'api-root')
+            : undefined,
       });
       if (result.ok && result.models?.length) {
         selectFirstProviderModelWhenEmpty(result.models, inputKey);

@@ -220,6 +220,17 @@ export async function listProviderModels(
       detail: 'Azure OpenAI deployment discovery is not supported from the inference endpoint.',
     };
   }
+  if (
+    input.protocol === 'anthropic' &&
+    input.anthropicBaseUrlMode === 'messages-endpoint'
+  ) {
+    return {
+      ok: false,
+      kind: 'unsupported_protocol',
+      latencyMs: Date.now() - start,
+      detail: 'Anthropic model discovery requires an API-root Base URL, not a full Messages endpoint.',
+    };
+  }
 
   const validated = await validateBaseUrlResolved(input.baseUrl);
   if (validated.error || !validated.parsed) {

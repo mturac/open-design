@@ -475,7 +475,7 @@ function missingByokModelFetchFields(
 
 function providerConnectionTestKey(
   protocol: ApiProtocol,
-  config: Pick<AppConfig, 'apiKey' | 'baseUrl' | 'model' | 'apiVersion'>,
+  config: Pick<AppConfig, 'apiKey' | 'baseUrl' | 'model' | 'apiVersion' | 'anthropicBaseUrlMode'>,
 ): string {
   return [
     protocol,
@@ -483,6 +483,7 @@ function providerConnectionTestKey(
     config.apiKey.trim(),
     config.model.trim(),
     protocol === 'azure' ? config.apiVersion?.trim() ?? '' : '',
+    protocol === 'anthropic' ? config.anthropicBaseUrlMode ?? 'api-root' : '',
   ].join('\n');
 }
 
@@ -686,6 +687,7 @@ function defaultApiProtocolConfig(protocol: ApiProtocol): ApiProtocolConfig {
     baseUrl: provider?.baseUrl ?? '',
     model: provider?.model ?? '',
     apiVersion: '',
+    anthropicBaseUrlMode: protocol === 'anthropic' ? 'api-root' : undefined,
     apiProviderBaseUrl: provider ? provider.baseUrl : null,
   };
 }
@@ -753,6 +755,7 @@ function currentApiProtocolConfig(config: AppConfig): ApiProtocolConfig {
     baseUrl: config.baseUrl,
     model: config.model,
     apiVersion: config.apiVersion ?? '',
+    anthropicBaseUrlMode: config.anthropicBaseUrlMode ?? 'api-root',
     apiProviderBaseUrl: config.apiProviderBaseUrl ?? null,
     byokImageModel: config.byokImageModel ?? '',
     byokVideoModel: config.byokVideoModel ?? '',
@@ -774,6 +777,10 @@ function applyApiProtocolConfig(
     model: apiConfig.model,
     apiProviderBaseUrl: apiConfig.apiProviderBaseUrl ?? null,
     apiVersion: protocol === 'azure' ? (apiConfig.apiVersion ?? '') : '',
+    anthropicBaseUrlMode:
+      protocol === 'anthropic'
+        ? (apiConfig.anthropicBaseUrlMode ?? 'api-root')
+        : undefined,
     // byokImageModel applies to the protocols that inject the daemon-side
     // generate_image tool (SenseAudio, AIHubMix) — flipping to another BYOK
     // tab shouldn't carry an image-model choice into, say, the OpenAI form.
@@ -1061,6 +1068,7 @@ export function sanitizeSettingsSavePayload(
     apiKey: initial.apiKey,
     apiProtocol: initial.apiProtocol,
     apiVersion: initial.apiVersion,
+    anthropicBaseUrlMode: initial.anthropicBaseUrlMode,
     apiProtocolConfigs: initial.apiProtocolConfigs,
     apiProviderBaseUrl: initial.apiProviderBaseUrl,
     baseUrl: initial.baseUrl,
@@ -1418,6 +1426,9 @@ export function SettingsDialog({
         initial.baseUrl,
         initial.apiKey,
         initial.apiVersion ?? '',
+        protocol === 'anthropic'
+          ? initial.anthropicBaseUrlMode ?? 'api-root'
+          : 'api-root',
       );
     });
   const agentTestAbortRef = useRef<AbortController | null>(null);
@@ -1590,6 +1601,7 @@ export function SettingsDialog({
     cfg.baseUrl,
     cfg.model,
     cfg.apiVersion,
+    cfg.anthropicBaseUrlMode,
   ]);
   useEffect(() => {
     if (providerModelsFirstResetRef.current) {
@@ -1607,6 +1619,7 @@ export function SettingsDialog({
     cfg.apiKey,
     cfg.baseUrl,
     cfg.apiVersion,
+    cfg.anthropicBaseUrlMode,
   ]);
   // Releasing the abort controllers on unmount avoids the "setState after
   // unmount" warning if the dialog closes while a test is still running.
@@ -1946,6 +1959,10 @@ export function SettingsDialog({
           baseUrl: cfg.baseUrl,
           apiKey: cleanByokApiKey(cfg.apiKey),
           model: cfg.model,
+          anthropicBaseUrlMode:
+            apiProtocol === 'anthropic'
+              ? (cfg.anthropicBaseUrlMode ?? 'api-root')
+              : undefined,
           apiVersion:
             apiProtocol === 'azure'
               ? cfg.apiVersion?.trim() || undefined
@@ -2122,6 +2139,7 @@ export function SettingsDialog({
       cfg.baseUrl,
       cfg.apiKey,
       cfg.apiVersion ?? '',
+      cfg.anthropicBaseUrlMode ?? 'api-root',
     );
     const cachedModels = activeProviderModelsCache[cacheKey];
     if (cachedModels) {
@@ -2161,6 +2179,10 @@ export function SettingsDialog({
           protocol: apiProtocol,
           baseUrl: cfg.baseUrl,
           apiKey: cleanByokApiKey(cfg.apiKey),
+          anthropicBaseUrlMode:
+            apiProtocol === 'anthropic'
+              ? (cfg.anthropicBaseUrlMode ?? 'api-root')
+              : undefined,
         },
         controller.signal,
       );
@@ -2665,8 +2687,9 @@ export function SettingsDialog({
       cfg.baseUrl,
       cfg.apiKey,
       cfg.apiVersion ?? '',
+      cfg.anthropicBaseUrlMode ?? 'api-root',
     ),
-    [apiProtocol, cfg.baseUrl, cfg.apiKey, cfg.apiVersion],
+    [apiProtocol, cfg.baseUrl, cfg.apiKey, cfg.apiVersion, cfg.anthropicBaseUrlMode],
   );
   const fetchedApiModelOptions =
     activeProviderModelsCache[providerModelsKey] ?? [];
@@ -2771,6 +2794,7 @@ export function SettingsDialog({
     cfg.mode,
     cfg.apiVersion,
     byokModelFetchDraftValidation,
+    cfg.anthropicBaseUrlMode,
     providerModelsCommittedKey,
     providerModelsKey,
     visualStabilityMode,
@@ -2890,6 +2914,28 @@ export function SettingsDialog({
       : apiProtocol === 'ollama'
         ? 'http://localhost:11434'
         : undefined;
+  const renderAnthropicBaseUrlModeField = () => (
+    apiProtocol === 'anthropic' ? (
+      <label className="field">
+        <span className="field-label">{t('settings.anthropicBaseUrlMode')}</span>
+        <select
+          value={cfg.anthropicBaseUrlMode ?? 'api-root'}
+          onChange={(event) => updateApiConfig({
+            anthropicBaseUrlMode:
+              event.target.value === 'messages-endpoint'
+                ? 'messages-endpoint'
+                : 'api-root',
+          })}
+        >
+          <option value="api-root">{t('settings.anthropicBaseUrlModeRoot')}</option>
+          <option value="messages-endpoint">{t('settings.anthropicBaseUrlModeMessages')}</option>
+        </select>
+        <span className="field-inline-status">
+          {t('settings.anthropicBaseUrlModeHint')}
+        </span>
+      </label>
+    ) : null
+  );
   useEffect(() => {
     if (!focusByokRequiredFieldAfterProtocolSwitchRef.current) return;
     focusByokRequiredFieldAfterProtocolSwitchRef.current = false;
@@ -4485,6 +4531,7 @@ export function SettingsDialog({
                   }}
                 />
               ) : null}
+              {apiProtocol === 'anthropic' ? renderAnthropicBaseUrlModeField() : null}
               <label className="field">
                 <span className="field-label">{t('settings.maxTokens')}</span>
                 <input

@@ -90,6 +90,7 @@ export interface FinalizeOptions {
   model: string;
   maxTokens?: number;
   apiVersion?: string;
+  anthropicBaseUrlMode?: 'api-root' | 'messages-endpoint';
   now?: () => Date;
   fetchImpl?: typeof globalThis.fetch;
   signal?: AbortSignal;
@@ -376,6 +377,9 @@ export async function finalizeDesignPackage(
         userPrompt,
       };
       if (options.apiVersion) callParams.apiVersion = options.apiVersion;
+      if (options.anthropicBaseUrlMode) {
+        callParams.anthropicBaseUrlMode = options.anthropicBaseUrlMode;
+      }
       callParams.signal = options.signal
         ? AbortSignal.any([options.signal, timeoutController.signal])
         : timeoutController.signal;
@@ -493,6 +497,7 @@ export interface FinalizeProviderCallParams {
   systemPrompt: string;
   userPrompt: string;
   apiVersion?: string;
+  anthropicBaseUrlMode?: 'api-root' | 'messages-endpoint';
   signal?: AbortSignal;
   fetchImpl?: typeof globalThis.fetch;
   /** Test-only: skip the inter-attempt sleep so retries are instant. */
@@ -542,7 +547,9 @@ function buildFinalizeProviderRequest(params: FinalizeProviderCallParams): Final
 
   if (params.protocol === 'anthropic') {
     return {
-      url: appendVersionedApiPath(params.baseUrl, '/messages'),
+      url: params.anthropicBaseUrlMode === 'messages-endpoint'
+        ? params.baseUrl
+        : appendVersionedApiPath(params.baseUrl, '/messages'),
       headers: {
         'content-type': 'application/json',
         'x-api-key': params.apiKey,

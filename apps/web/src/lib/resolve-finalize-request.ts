@@ -33,6 +33,8 @@ function resolveByokFields(config: AppConfig, protocol: ApiProtocol) {
     baseUrl: (saved?.baseUrl ?? config.baseUrl ?? '').trim(),
     model: (saved?.model ?? config.model ?? '').trim(),
     apiVersion: (saved?.apiVersion ?? config.apiVersion ?? '').trim(),
+    anthropicBaseUrlMode:
+      saved?.anthropicBaseUrlMode ?? config.anthropicBaseUrlMode ?? 'api-root',
   };
 }
 
@@ -46,7 +48,7 @@ export function buildFinalizeRequest(
   config: AppConfig,
 ): FinalizeAnthropicRequest | null {
   const protocol = resolveFinalizeProtocol(config);
-  const { apiKey, baseUrl, model, apiVersion } = resolveByokFields(
+  const { apiKey, baseUrl, model, apiVersion, anthropicBaseUrlMode } = resolveByokFields(
     config,
     protocol,
   );
@@ -58,6 +60,9 @@ export function buildFinalizeRequest(
     ...(baseUrl ? { baseUrl } : {}),
     model,
     maxTokens: effectiveMaxTokens(config),
+    ...(protocol === 'anthropic' && anthropicBaseUrlMode === 'messages-endpoint'
+      ? { anthropicBaseUrlMode }
+      : {}),
     ...(protocol === 'azure' && apiVersion ? { apiVersion } : {}),
   };
 }

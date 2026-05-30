@@ -962,7 +962,16 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
     redactSecrets,
   } = ctx.finalize;
   app.post('/api/projects/:id/finalize/:provider', async (req, res) => {
-    const { apiKey, baseUrl, model, maxTokens, apiVersion, protocol: bodyProtocol, reasoningExecution } = req.body || {};
+    const {
+      apiKey,
+      baseUrl,
+      model,
+      maxTokens,
+      apiVersion,
+      anthropicBaseUrlMode,
+      protocol: bodyProtocol,
+      reasoningExecution,
+    } = req.body || {};
     try {
       // Centralized path-traversal guard. `isSafeId` (apps/daemon/src/projects.ts)
       // rejects pure-dot ids (`.`, `..`, etc.) which would otherwise pass
@@ -1026,6 +1035,18 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
       if (apiVersion !== undefined && typeof apiVersion !== 'string') {
         return sendApiError(res, 400, 'BAD_REQUEST', 'apiVersion must be a string when provided');
       }
+      if (
+        anthropicBaseUrlMode !== undefined &&
+        anthropicBaseUrlMode !== 'api-root' &&
+        anthropicBaseUrlMode !== 'messages-endpoint'
+      ) {
+        return sendApiError(
+          res,
+          400,
+          'BAD_REQUEST',
+          'anthropicBaseUrlMode must be api-root or messages-endpoint when provided',
+        );
+      }
 
       const project = getProject(db, req.params.id);
       if (!project) {
@@ -1053,6 +1074,9 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
             maxTokens,
             ...(typeof apiVersion === 'string' && apiVersion.trim()
               ? { apiVersion: apiVersion.trim() }
+              : {}),
+            ...(anthropicBaseUrlMode === 'messages-endpoint'
+              ? { anthropicBaseUrlMode }
               : {}),
             signal: finalizeAbort.signal,
           },

@@ -339,6 +339,11 @@ export const ru: Dict = {
   'settings.azureDeploymentModelHint': 'Для Azure OpenAI это поле используется как имя развертывания в /openai/deployments/<model>. Укажите имя развертывания, созданного в Azure.',
   'settings.azureModelFetchHint': 'Введите имя развёртывания из вашего ресурса Azure. Развёртывания Azure нельзя получить автоматически.',
   'settings.apiVersion': 'Версия API',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': 'Модель генерации изображений',
   'settings.byokVideoModel': 'Модель генерации видео',
   'settings.byokVideoI2vHint': 'Модель «изображение в видео»: нужно референсное изображение (иначе используется последнее изображение проекта)',

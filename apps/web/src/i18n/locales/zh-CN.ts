@@ -339,6 +339,11 @@ export const zhCN: Dict = {
   'settings.azureDeploymentModelHint': '对于 Azure OpenAI，此字段会作为 /openai/deployments/<model> 中的部署名称使用。请填写你在 Azure 中创建的部署名称。',
   'settings.azureModelFetchHint': '填写 Azure resource 里的部署名称。Azure deployment 目前无法自动拉取。',
   'settings.apiVersion': 'API 版本',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': '图片生成模型',
   'settings.byokVideoModel': '视频生成模型',
   'settings.byokVideoI2vHint': '图生视频模型:需要参考图(不指定时自动使用项目中最新的图片)',

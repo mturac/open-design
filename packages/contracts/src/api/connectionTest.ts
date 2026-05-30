@@ -180,12 +180,16 @@ export interface ConnectionTestDiagnostics {
 }
 
 export type ConnectionTestProtocol = 'anthropic' | 'openai' | 'azure' | 'google' | 'ollama' | 'senseaudio' | 'aihubmix';
+export type AnthropicBaseUrlMode = 'api-root' | 'messages-endpoint';
 
 export interface ProviderTestRequest extends ReasoningExecutionRequestFields {
   protocol: ConnectionTestProtocol;
   baseUrl: string;
   apiKey: string;
   model: string;
+  // Anthropic only. The default treats baseUrl as an API root and appends
+  // /v1/messages; messages-endpoint uses baseUrl directly.
+  anthropicBaseUrlMode?: AnthropicBaseUrlMode;
   // Azure only. When omitted, the daemon falls back to its default api-version.
   apiVersion?: string;
 }

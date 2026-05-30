@@ -339,6 +339,11 @@ export const ko: Dict = {
   'settings.azureDeploymentModelHint': 'Azure OpenAI에서는 이 필드가 /openai/deployments/<model>의 배포 이름으로 사용됩니다. Azure에서 만든 배포 이름을 입력하세요.',
   'settings.azureModelFetchHint': 'Azure 리소스의 배포 이름을 입력하세요. Azure 배포는 자동으로 불러올 수 없습니다.',
   'settings.apiVersion': 'API 버전',
+  'settings.anthropicBaseUrlMode': 'Anthropic URL type',
+  'settings.anthropicBaseUrlModeRoot': 'API root (append /v1/messages)',
+  'settings.anthropicBaseUrlModeMessages': 'Full Messages endpoint',
+  'settings.anthropicBaseUrlModeHint':
+    'Use API root for standard Anthropic-compatible providers. Choose full endpoint only when your provider already gives the complete Messages URL.',
   'settings.byokImageModel': '이미지 생성 모델',
   'settings.byokVideoModel': '비디오 생성 모델',
   'settings.byokVideoI2vHint': '이미지→비디오 모델: 참조 이미지가 필요합니다(지정하지 않으면 프로젝트의 최신 이미지를 자동 사용)',
