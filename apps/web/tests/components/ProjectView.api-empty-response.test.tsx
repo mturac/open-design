@@ -560,9 +560,18 @@ describe('ProjectView API empty response handling', () => {
 
   it('keeps regenerated multipage artifact entry at index.html and rewrites child links', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
-      htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
-      htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
-      htmlProjectFile('about-2.html', 40, { artifactIdentifier: 'about' }),
+      htmlProjectFile('index.html', 10, {
+        artifactIdentifier: 'index',
+        artifactGroupIdentifier: 'site-a',
+      }),
+      htmlProjectFile('about.html', 20, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'site-a',
+      }),
+      htmlProjectFile('about-2.html', 40, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'site-a',
+      }),
     ] as never);
     mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index.html', 50) as never);
     const artifact =
@@ -596,8 +605,14 @@ describe('ProjectView API empty response handling', () => {
   it('does not overwrite an unrelated existing index.html when saving a multipage artifact', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10),
-      htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
-      htmlProjectFile('about-2.html', 40, { artifactIdentifier: 'about' }),
+      htmlProjectFile('about.html', 20, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'html-artifact:index-2.html',
+      }),
+      htmlProjectFile('about-2.html', 40, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'html-artifact:index-2.html',
+      }),
     ] as never);
     mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index-2.html', 50) as never);
     const artifact =
@@ -767,7 +782,7 @@ function hasSavedAssistantMessage(predicate: (message: ChatMessage) => boolean):
 function htmlProjectFile(
   name: string,
   mtime: number,
-  options: { artifactIdentifier?: string } = {},
+  options: { artifactIdentifier?: string; artifactGroupIdentifier?: string } = {},
 ) {
   return {
     name,
@@ -786,7 +801,10 @@ function htmlProjectFile(
           status: 'complete',
           exports: ['html'],
           primary: true,
-          metadata: { identifier: options.artifactIdentifier },
+          metadata: {
+            identifier: options.artifactIdentifier,
+            artifactGroupIdentifier: options.artifactGroupIdentifier,
+          },
         }
       : undefined,
   };

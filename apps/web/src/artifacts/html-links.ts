@@ -37,6 +37,10 @@ interface HtmlLinkProjectFile {
   };
 }
 
+interface HtmlLinkRewriteOptions {
+  artifactGroupIdentifier?: string;
+}
+
 export function canOverwriteHtmlArtifactEntry(input: {
   baseName: string;
   ext: '.html' | '.jsx' | '.tsx';
@@ -62,8 +66,9 @@ export function canOverwriteHtmlArtifactEntry(input: {
 export function rewriteHtmlLinksToCurrentProjectFiles(
   html: string,
   projectFiles: readonly HtmlLinkProjectFile[],
+  options: HtmlLinkRewriteOptions = {},
 ): string {
-  const latestByTarget = buildLatestHtmlFileIndex(projectFiles);
+  const latestByTarget = buildLatestHtmlFileIndex(projectFiles, options);
   if (latestByTarget.size === 0) return html;
 
   return html.replace(
@@ -75,25 +80,42 @@ export function rewriteHtmlLinksToCurrentProjectFiles(
   );
 }
 
-function buildLatestHtmlFileIndex(projectFiles: readonly HtmlLinkProjectFile[]): Map<string, string> {
+function buildLatestHtmlFileIndex(
+  projectFiles: readonly HtmlLinkProjectFile[],
+  options: HtmlLinkRewriteOptions,
+): Map<string, string> {
   const latest = new Map<string, HtmlLinkProjectFile>();
+  const artifactGroupIdentifier = normalizeOptionalIdentifier(options.artifactGroupIdentifier);
   for (const file of projectFiles) {
     if (!isHtmlProjectFile(file)) continue;
     const key = htmlFileFamilyKey(file.name);
     if (!key) continue;
-    if (!htmlFileManifestMatchesFamily(file, key)) continue;
+    if (!htmlFileManifestMatchesFamily(file, key, artifactGroupIdentifier)) continue;
     const current = latest.get(key);
     if (!current || file.mtime > current.mtime) latest.set(key, file);
   }
   return new Map(Array.from(latest, ([key, file]) => [key, file.name]));
 }
 
-function htmlFileManifestMatchesFamily(file: HtmlLinkProjectFile, familyKey: string): boolean {
+function htmlFileManifestMatchesFamily(
+  file: HtmlLinkProjectFile,
+  familyKey: string,
+  artifactGroupIdentifier: string | null,
+): boolean {
   const identifier = file.artifactManifest?.metadata?.identifier;
   if (typeof identifier !== 'string') return false;
   const normalizedIdentifier = normalizeArtifactIdentifier(identifier);
   if (!normalizedIdentifier) return false;
-  return normalizedIdentifier === htmlFileFamilyIdentifier(familyKey);
+  if (normalizedIdentifier !== htmlFileFamilyIdentifier(familyKey)) return false;
+
+  const fileGroupIdentifier = normalizeOptionalIdentifier(
+    file.artifactManifest?.metadata?.artifactGroupIdentifier,
+  );
+  return (
+    artifactGroupIdentifier !== null &&
+    fileGroupIdentifier !== null &&
+    artifactGroupIdentifier === fileGroupIdentifier
+  );
 }
 
 function isHtmlProjectFile(file: HtmlLinkProjectFile): boolean {
@@ -173,6 +195,12 @@ function normalizeArtifactIdentifier(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function normalizeOptionalIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = normalizeArtifactIdentifier(value);
+  return normalized || null;
 }
 
 function preserveRelativePrefix(originalPathname: string, latestName: string): string {

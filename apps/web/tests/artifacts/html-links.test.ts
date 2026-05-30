@@ -89,11 +89,11 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
       '</body></html>';
 
     const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
-      htmlFile('about.html', 10, { artifactIdentifier: 'about' }),
-      htmlFile('about-2.html', 30, { artifactIdentifier: 'about' }),
-      htmlFile('contact.html', 20, { artifactIdentifier: 'contact' }),
-      htmlFile('contact-2.html', 40, { artifactIdentifier: 'contact' }),
-    ]);
+      htmlFile('about.html', 10, { artifactIdentifier: 'about', artifactGroupIdentifier: 'site-a' }),
+      htmlFile('about-2.html', 30, { artifactIdentifier: 'about', artifactGroupIdentifier: 'site-a' }),
+      htmlFile('contact.html', 20, { artifactIdentifier: 'contact', artifactGroupIdentifier: 'site-a' }),
+      htmlFile('contact-2.html', 40, { artifactIdentifier: 'contact', artifactGroupIdentifier: 'site-a' }),
+    ], { artifactGroupIdentifier: 'site-a' });
 
     expect(out).toContain('href="about-2.html"');
     expect(out).toContain('href="contact-2.html?tab=team#lead"');
@@ -109,9 +109,9 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
       '</body></html>';
 
     const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
-      htmlFile('index.html', 10, { artifactIdentifier: 'index' }),
-      htmlFile('index-2.html', 40, { artifactIdentifier: 'index' }),
-    ]);
+      htmlFile('index.html', 10, { artifactIdentifier: 'index', artifactGroupIdentifier: 'site-a' }),
+      htmlFile('index-2.html', 40, { artifactIdentifier: 'index', artifactGroupIdentifier: 'site-a' }),
+    ], { artifactGroupIdentifier: 'site-a' });
 
     expect(out).toContain('href="index-2.html"');
     expect(out).toContain('href="./index-2.html#top"');
@@ -124,9 +124,24 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
       '</body></html>';
 
     const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
-      htmlFile('about.html', 10, { artifactIdentifier: 'about' }),
-      htmlFile('about-2.html', 40, { artifactIdentifier: 'other-about' }),
-    ]);
+      htmlFile('about.html', 10, { artifactIdentifier: 'about', artifactGroupIdentifier: 'site-a' }),
+      htmlFile('about-2.html', 40, { artifactIdentifier: 'other-about', artifactGroupIdentifier: 'site-b' }),
+    ], { artifactGroupIdentifier: 'site-a' });
+
+    expect(out).toContain('href="about.html"');
+    expect(out).not.toContain('href="about-2.html"');
+  });
+
+  it('does not rewrite to another artifact group with the same page identifier', () => {
+    const html =
+      '<!doctype html><html><body>' +
+      '<a href="about.html">About</a>' +
+      '</body></html>';
+
+    const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
+      htmlFile('about.html', 10, { artifactIdentifier: 'about', artifactGroupIdentifier: 'site-a' }),
+      htmlFile('about-2.html', 40, { artifactIdentifier: 'about', artifactGroupIdentifier: 'site-b' }),
+    ], { artifactGroupIdentifier: 'site-a' });
 
     expect(out).toContain('href="about.html"');
     expect(out).not.toContain('href="about-2.html"');
@@ -136,7 +151,7 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
 function htmlFile(
   name: string,
   mtime: number,
-  options: { artifactIdentifier?: string } = {},
+  options: { artifactIdentifier?: string; artifactGroupIdentifier?: string } = {},
 ) {
   return {
     name,
@@ -147,7 +162,10 @@ function htmlFile(
     artifactManifest: options.artifactIdentifier !== undefined
       ? {
           entry: name,
-          metadata: { identifier: options.artifactIdentifier },
+          metadata: {
+            identifier: options.artifactIdentifier,
+            artifactGroupIdentifier: options.artifactGroupIdentifier,
+          },
         }
       : undefined,
   };

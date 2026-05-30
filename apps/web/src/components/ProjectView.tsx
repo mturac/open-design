@@ -1157,9 +1157,15 @@ export function ProjectView({
           artifactIdentifier: art.identifier,
         }),
       });
+      const artifactGroupIdentifier =
+        ext === '.html'
+          ? htmlArtifactGroupIdentifierFor(art, currentProjectFiles, fileName)
+          : undefined;
       const html =
         ext === '.html'
-          ? rewriteHtmlLinksToCurrentProjectFiles(art.html, currentProjectFiles)
+          ? rewriteHtmlLinksToCurrentProjectFiles(art.html, currentProjectFiles, {
+              artifactGroupIdentifier,
+            })
           : art.html;
       if (ext === '.html') {
         const pointerTarget = resolveHtmlPointerArtifactTarget({
@@ -1193,6 +1199,7 @@ export function ProjectView({
         identifier: art.identifier,
         artifactType: art.artifactType,
         inferred: false,
+        ...(artifactGroupIdentifier ? { artifactGroupIdentifier } : {}),
       };
       const manifest =
         ext === '.html'
@@ -4627,6 +4634,35 @@ function artifactBaseNameFor(art: Artifact): string {
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'artifact'
   );
+}
+
+function htmlArtifactGroupIdentifierFor(
+  art: Artifact,
+  projectFiles: ProjectFile[],
+  fileName: string,
+): string {
+  const identifier = normalizeArtifactGroupSegment(art.identifier);
+  if (identifier) {
+    const existingGroup = projectFiles
+      .filter((file) => {
+        return normalizeArtifactGroupSegment(file.artifactManifest?.metadata?.identifier) === identifier;
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .map((file) => file.artifactManifest?.metadata?.artifactGroupIdentifier)
+      .find((value): value is string => {
+        return typeof value === 'string' && normalizeArtifactGroupSegment(value).length > 0;
+      });
+    if (existingGroup) return existingGroup;
+  }
+  return `html-artifact:${fileName}`;
+}
+
+function normalizeArtifactGroupSegment(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export function findExistingArtifactProjectFile(
