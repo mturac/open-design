@@ -147,7 +147,6 @@ function htmlFileFamilyKey(pathname: string): string | null {
   if (dot <= 0) return null;
   const stem = fileName.slice(0, dot);
   const ext = fileName.slice(dot).toLowerCase();
-  if (stem.toLowerCase() === 'index') return null;
   const familyStem = stem.replace(/-\d+$/, '');
   return `${directory}${familyStem}${ext}`.replace(/^\.\//, '');
 }

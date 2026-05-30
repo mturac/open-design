@@ -100,6 +100,22 @@ describe('rewriteHtmlLinksToCurrentProjectFiles', () => {
     expect(out).toContain('href="#local"');
     expect(out).toContain('href="https://example.com/about.html"');
   });
+
+  it('rewrites home links when the artifact entry had to move off index.html', () => {
+    const html =
+      '<!doctype html><html><body>' +
+      '<a href="index.html">Home</a>' +
+      '<a href="./index.html#top">Top</a>' +
+      '</body></html>';
+
+    const out = rewriteHtmlLinksToCurrentProjectFiles(html, [
+      htmlFile('index.html', 10),
+      htmlFile('index-2.html', 40),
+    ]);
+
+    expect(out).toContain('href="index-2.html"');
+    expect(out).toContain('href="./index-2.html#top"');
+  });
 });
 
 function htmlFile(
