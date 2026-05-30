@@ -558,6 +558,41 @@ describe('ProjectView API empty response handling', () => {
     expect(screen.queryByText(/Refused to save artifact/i)).toBeNull();
   });
 
+  it('keeps regenerated multipage artifact entry at index.html and rewrites child links', async () => {
+    mockedFetchProjectFiles.mockResolvedValue([
+      htmlProjectFile('index.html', 10),
+      htmlProjectFile('about.html', 20),
+      htmlProjectFile('about-2.html', 40),
+    ] as never);
+    mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index.html', 50) as never);
+    const artifact =
+      '<artifact identifier="index" type="text/html" title="Multipage Site">' +
+      '<!doctype html><html><head><title>Home</title></head><body>' +
+      '<main><h1>Home</h1><a href="about.html">About</a></main>' +
+      '</body></html>' +
+      '</artifact>';
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta(artifact);
+      handlers.onDone('');
+    });
+    renderProjectView();
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalled();
+    });
+    const [, fileName, content] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
+    expect(fileName).toBe('index.html');
+    expect(content).toContain('href="about-2.html"');
+  });
+
   it('injects ElevenLabs voice options into API-mode audio project prompts', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -692,4 +727,15 @@ function hasSavedAssistantMessage(predicate: (message: ChatMessage) => boolean):
     const message = call[2] as ChatMessage;
     return message.role === 'assistant' && predicate(message);
   });
+}
+
+function htmlProjectFile(name: string, mtime: number) {
+  return {
+    name,
+    path: name,
+    kind: 'html',
+    mime: 'text/html',
+    size: 1,
+    mtime,
+  };
 }

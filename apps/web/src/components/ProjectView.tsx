@@ -11,6 +11,10 @@ import {
 } from 'react';
 import { createHtmlArtifactManifest, inferLegacyManifest } from '../artifacts/manifest';
 import { resolveHtmlPointerArtifactTarget } from '../artifacts/pointer';
+import {
+  resolveHtmlArtifactFileName,
+  rewriteHtmlLinksToCurrentProjectFiles,
+} from '../artifacts/html-links';
 import { validateHtmlArtifact } from '../artifacts/validate';
 import { createArtifactParser } from '../artifacts/parser';
 import { useI18n } from '../i18n';
@@ -1135,20 +1139,23 @@ export function ProjectView({
     async (art: Artifact, projectFilesSnapshot?: ProjectFile[]) => {
       const baseName = artifactBaseNameFor(art);
       const ext = artifactExtensionFor(art);
-      // Pick a name that doesn't collide with an existing project file.
-      // The first run uses `<base>.<ext>`; subsequent runs append `-2`, `-3`…
-      // so prior artifacts aren't silently overwritten.
+      // Pick a name that doesn't collide with an existing project file while
+      // keeping index.html stable for multi-page HTML artifacts.
       const currentProjectFiles = projectFilesSnapshot ?? projectFilesRef.current;
       const existing = new Set(currentProjectFiles.map((f) => f.name));
-      let fileName = `${baseName}${ext}`;
-      let n = 2;
-      while (existing.has(fileName) && savedArtifactRef.current !== fileName) {
-        fileName = `${baseName}-${n}${ext}`;
-        n += 1;
-      }
+      const fileName = resolveHtmlArtifactFileName({
+        baseName,
+        ext,
+        existingFileNames: existing,
+        savedArtifactName: savedArtifactRef.current,
+      });
+      const html =
+        ext === '.html'
+          ? rewriteHtmlLinksToCurrentProjectFiles(art.html, currentProjectFiles)
+          : art.html;
       if (ext === '.html') {
         const pointerTarget = resolveHtmlPointerArtifactTarget({
-          content: art.html,
+          content: html,
           candidateFileName: fileName,
           projectFiles: currentProjectFiles,
         });
@@ -1165,7 +1172,7 @@ export function ProjectView({
       // when only Edit-tool changes happened this turn. Without this guard,
       // such content lands as a phantom HTML file in the project panel.
       if (ext === '.html') {
-        const validation = validateHtmlArtifact(art.html);
+        const validation = validateHtmlArtifact(html);
         if (!validation.ok) {
           setError(`Refused to save artifact "${art.identifier || art.title || 'untitled'}": ${validation.reason}`);
           return;
@@ -1197,7 +1204,7 @@ export function ProjectView({
                 designSystemId: project.designSystemId,
               },
             });
-      const file = await writeProjectTextFile(project.id, fileName, art.html, {
+      const file = await writeProjectTextFile(project.id, fileName, html, {
         artifactManifest: manifest ?? undefined,
       });
       if (file) {
