@@ -3,12 +3,20 @@ export function resolveHtmlArtifactFileName(input: {
   ext: '.html' | '.jsx' | '.tsx';
   existingFileNames: ReadonlySet<string>;
   savedArtifactName?: string | null;
+  canOverwriteExistingEntry?: boolean;
 }): string {
-  if (input.ext === '.html' && input.baseName.toLowerCase() === 'index') {
+  const preferredFileName = `${input.baseName}${input.ext}`;
+  if (
+    input.ext === '.html' &&
+    input.baseName.toLowerCase() === 'index' &&
+    (!input.existingFileNames.has(preferredFileName) ||
+      input.savedArtifactName === preferredFileName ||
+      input.canOverwriteExistingEntry === true)
+  ) {
     return 'index.html';
   }
 
-  let fileName = `${input.baseName}${input.ext}`;
+  let fileName = preferredFileName;
   let n = 2;
   while (input.existingFileNames.has(fileName) && input.savedArtifactName !== fileName) {
     fileName = `${input.baseName}-${n}${input.ext}`;
@@ -23,6 +31,31 @@ interface HtmlLinkProjectFile {
   kind?: string;
   mime?: string;
   mtime: number;
+  artifactManifest?: {
+    entry: string;
+    metadata?: Record<string, unknown>;
+  };
+}
+
+export function canOverwriteHtmlArtifactEntry(input: {
+  baseName: string;
+  ext: '.html' | '.jsx' | '.tsx';
+  projectFiles: readonly HtmlLinkProjectFile[];
+  savedArtifactName?: string | null;
+  artifactIdentifier?: string;
+}): boolean {
+  if (input.ext !== '.html' || input.baseName.toLowerCase() !== 'index') return false;
+  if (input.savedArtifactName === 'index.html') return true;
+  const existingIndex = input.projectFiles.find((file) => {
+    return file.name === 'index.html' || file.path === 'index.html';
+  });
+  if (!existingIndex) return true;
+  const manifest = existingIndex.artifactManifest;
+  return (
+    Boolean(input.artifactIdentifier) &&
+    manifest?.entry === 'index.html' &&
+    manifest.metadata?.identifier === input.artifactIdentifier
+  );
 }
 
 export function rewriteHtmlLinksToCurrentProjectFiles(

@@ -12,6 +12,7 @@ import {
 import { createHtmlArtifactManifest, inferLegacyManifest } from '../artifacts/manifest';
 import { resolveHtmlPointerArtifactTarget } from '../artifacts/pointer';
 import {
+  canOverwriteHtmlArtifactEntry,
   resolveHtmlArtifactFileName,
   rewriteHtmlLinksToCurrentProjectFiles,
 } from '../artifacts/html-links';
@@ -1148,6 +1149,13 @@ export function ProjectView({
         ext,
         existingFileNames: existing,
         savedArtifactName: savedArtifactRef.current,
+        canOverwriteExistingEntry: canOverwriteHtmlArtifactEntry({
+          baseName,
+          ext,
+          projectFiles: currentProjectFiles,
+          savedArtifactName: savedArtifactRef.current,
+          artifactIdentifier: art.identifier,
+        }),
       });
       const html =
         ext === '.html'

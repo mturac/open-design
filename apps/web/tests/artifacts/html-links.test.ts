@@ -6,14 +6,25 @@ import {
 } from '../../src/artifacts/html-links';
 
 describe('resolveHtmlArtifactFileName', () => {
-  it('keeps index.html as the stable entry point when it already exists', () => {
+  it('keeps index.html as the stable entry point when the saved artifact already owns it', () => {
+    expect(
+      resolveHtmlArtifactFileName({
+        baseName: 'index',
+        ext: '.html',
+        existingFileNames: new Set(['index.html']),
+        savedArtifactName: 'index.html',
+      }),
+    ).toBe('index.html');
+  });
+
+  it('uses a suffix for index.html when the existing file is unrelated', () => {
     expect(
       resolveHtmlArtifactFileName({
         baseName: 'index',
         ext: '.html',
         existingFileNames: new Set(['index.html']),
       }),
-    ).toBe('index.html');
+    ).toBe('index-2.html');
   });
 
   it('keeps numbered collision names for non-entry html artifacts', () => {

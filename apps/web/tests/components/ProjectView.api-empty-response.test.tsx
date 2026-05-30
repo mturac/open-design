@@ -560,7 +560,7 @@ describe('ProjectView API empty response handling', () => {
 
   it('keeps regenerated multipage artifact entry at index.html and rewrites child links', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
-      htmlProjectFile('index.html', 10),
+      htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
       htmlProjectFile('about.html', 20),
       htmlProjectFile('about-2.html', 40),
     ] as never);
@@ -590,6 +590,41 @@ describe('ProjectView API empty response handling', () => {
     });
     const [, fileName, content] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
     expect(fileName).toBe('index.html');
+    expect(content).toContain('href="about-2.html"');
+  });
+
+  it('does not overwrite an unrelated existing index.html when saving a multipage artifact', async () => {
+    mockedFetchProjectFiles.mockResolvedValue([
+      htmlProjectFile('index.html', 10),
+      htmlProjectFile('about.html', 20),
+      htmlProjectFile('about-2.html', 40),
+    ] as never);
+    mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index-2.html', 50) as never);
+    const artifact =
+      '<artifact identifier="index" type="text/html" title="Multipage Site">' +
+      '<!doctype html><html><head><title>Home</title></head><body>' +
+      '<main><h1>Home</h1><a href="about.html">About</a></main>' +
+      '</body></html>' +
+      '</artifact>';
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta(artifact);
+      handlers.onDone('');
+    });
+    renderProjectView();
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalled();
+    });
+    const [, fileName, content] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
+    expect(fileName).toBe('index-2.html');
     expect(content).toContain('href="about-2.html"');
   });
 
@@ -729,7 +764,11 @@ function hasSavedAssistantMessage(predicate: (message: ChatMessage) => boolean):
   });
 }
 
-function htmlProjectFile(name: string, mtime: number) {
+function htmlProjectFile(
+  name: string,
+  mtime: number,
+  options: { artifactIdentifier?: string } = {},
+) {
   return {
     name,
     path: name,
@@ -737,5 +776,18 @@ function htmlProjectFile(name: string, mtime: number) {
     mime: 'text/html',
     size: 1,
     mtime,
+    artifactManifest: options.artifactIdentifier
+      ? {
+          version: 1,
+          kind: 'html',
+          title: name,
+          entry: name,
+          renderer: 'html',
+          status: 'complete',
+          exports: ['html'],
+          primary: true,
+          metadata: { identifier: options.artifactIdentifier },
+        }
+      : undefined,
   };
 }
