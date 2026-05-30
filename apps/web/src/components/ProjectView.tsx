@@ -1144,22 +1144,26 @@ export function ProjectView({
       // keeping index.html stable for multi-page HTML artifacts.
       const currentProjectFiles = projectFilesSnapshot ?? projectFilesRef.current;
       const existing = new Set(currentProjectFiles.map((f) => f.name));
+      const canOverwriteExistingEntry = canOverwriteHtmlArtifactEntry({
+        baseName,
+        ext,
+        projectFiles: currentProjectFiles,
+        savedArtifactName: savedArtifactRef.current,
+        artifactIdentifier: art.identifier,
+      });
       const fileName = resolveHtmlArtifactFileName({
         baseName,
         ext,
         existingFileNames: existing,
         savedArtifactName: savedArtifactRef.current,
-        canOverwriteExistingEntry: canOverwriteHtmlArtifactEntry({
-          baseName,
-          ext,
-          projectFiles: currentProjectFiles,
-          savedArtifactName: savedArtifactRef.current,
-          artifactIdentifier: art.identifier,
-        }),
+        canOverwriteExistingEntry,
       });
       const artifactGroupIdentifier =
         ext === '.html'
-          ? htmlArtifactGroupIdentifierFor(art, currentProjectFiles, fileName)
+          ? htmlArtifactGroupIdentifierFor(art, currentProjectFiles, fileName, {
+              canReuseExistingGroup:
+                canOverwriteExistingEntry || savedArtifactRef.current === fileName,
+            })
           : undefined;
       const html =
         ext === '.html'
@@ -4640,21 +4644,38 @@ function htmlArtifactGroupIdentifierFor(
   art: Artifact,
   projectFiles: ProjectFile[],
   fileName: string,
+  options: { canReuseExistingGroup: boolean },
 ): string {
-  const identifier = normalizeArtifactGroupSegment(art.identifier);
-  if (identifier) {
-    const existingGroup = projectFiles
-      .filter((file) => {
-        return normalizeArtifactGroupSegment(file.artifactManifest?.metadata?.identifier) === identifier;
-      })
-      .sort((a, b) => b.mtime - a.mtime)
-      .map((file) => file.artifactManifest?.metadata?.artifactGroupIdentifier)
-      .find((value): value is string => {
-        return typeof value === 'string' && normalizeArtifactGroupSegment(value).length > 0;
-      });
-    if (existingGroup) return existingGroup;
+  const existingFile = projectFiles.find((file) => file.name === fileName || file.path === fileName);
+  const existingFileGroup = existingArtifactGroupIdentifier(
+    existingFile?.artifactManifest?.metadata?.artifactGroupIdentifier,
+  );
+  if (options.canReuseExistingGroup && existingFileGroup) {
+    return existingFileGroup;
   }
+
+  if (options.canReuseExistingGroup) {
+    const identifier = normalizeArtifactGroupSegment(art.identifier);
+    if (identifier) {
+      const existingGroup = projectFiles
+        .filter((file) => {
+          return normalizeArtifactGroupSegment(file.artifactManifest?.metadata?.identifier) === identifier;
+        })
+        .sort((a, b) => b.mtime - a.mtime)
+        .map((file) => file.artifactManifest?.metadata?.artifactGroupIdentifier)
+        .find((value): value is string => {
+          return typeof value === 'string' && normalizeArtifactGroupSegment(value).length > 0;
+        });
+      if (existingGroup) return existingGroup;
+    }
+  }
+
   return `html-artifact:${fileName}`;
+}
+
+function existingArtifactGroupIdentifier(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return normalizeArtifactGroupSegment(value).length > 0 ? value : null;
 }
 
 function normalizeArtifactGroupSegment(value: unknown): string {

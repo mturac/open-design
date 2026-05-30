@@ -643,6 +643,54 @@ describe('ProjectView API empty response handling', () => {
     expect(content).toContain('href="about-2.html"');
   });
 
+  it('starts a fresh group when a new index artifact is relocated away from an existing owner', async () => {
+    mockedFetchProjectFiles.mockResolvedValue([
+      htmlProjectFile('index.html', 10, {
+        artifactIdentifier: 'Index',
+        artifactGroupIdentifier: 'site-a',
+      }),
+      htmlProjectFile('about.html', 20, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'site-a',
+      }),
+      htmlProjectFile('about-2.html', 40, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'site-a',
+      }),
+    ] as never);
+    mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index-2.html', 50) as never);
+    const artifact =
+      '<artifact identifier="index" type="text/html" title="Multipage Site">' +
+      '<!doctype html><html><head><title>Home</title></head><body>' +
+      '<main><h1>Home</h1><a href="about.html">About</a></main>' +
+      '</body></html>' +
+      '</artifact>';
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta(artifact);
+      handlers.onDone('');
+    });
+    renderProjectView();
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalled();
+    });
+    const [, fileName, content, options] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
+    expect(fileName).toBe('index-2.html');
+    expect(content).toContain('href="about.html"');
+    expect(content).not.toContain('href="about-2.html"');
+    expect(options?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
+      'html-artifact:index-2.html',
+    );
+  });
+
   it('rewrites child links for legacy multipage artifacts without group metadata', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
