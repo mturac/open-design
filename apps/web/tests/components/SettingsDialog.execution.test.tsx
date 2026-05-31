@@ -1729,6 +1729,7 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
 
   it('does not resurrect Signing in from a stale loginInFlight echo after cancel', async () => {
     let statusStage: 'pending' | 'stale-pending' | 'signed-out' = 'pending';
+    let signedOutReads = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
       if (url === '/api/memory') {
@@ -1738,6 +1739,9 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
         );
       }
       if (url === '/api/integrations/vela/status') {
+        if (statusStage === 'signed-out') {
+          signedOutReads += 1;
+        }
         const body =
           statusStage === 'signed-out'
             ? {
@@ -1785,14 +1789,35 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
 
     window.dispatchEvent(
       new CustomEvent('od:amr-login-status-change', {
-        detail: { reason: 'login-canceled' },
+        detail: { reason: 'status-changed' },
       }),
     );
 
+    await waitFor(
+      () => {
+        expect(screen.getByRole('button', { name: 'Authorize' })).toBeTruthy();
+      },
+      { timeout: 3000 },
+    );
+    expect(screen.queryByText('Signing in…')).toBeNull();
+
+    statusStage = 'signed-out';
+    window.dispatchEvent(
+      new CustomEvent('od:amr-login-status-change', {
+        detail: { reason: 'status-changed' },
+      }),
+    );
     await waitFor(() => {
-      expect(screen.queryByText('Signing in…')).toBeNull();
+      expect(signedOutReads).toBeGreaterThan(0);
     });
-    expect(screen.getByRole('button', { name: 'Authorize' })).toBeTruthy();
+
+    statusStage = 'pending';
+    window.dispatchEvent(
+      new CustomEvent('od:amr-login-status-change', {
+        detail: { reason: 'status-changed' },
+      }),
+    );
+    expect(await screen.findByText('Signing in…')).toBeTruthy();
   });
 
   it('renders the signed-in AMR account state inside Settings without leaking vela branding', async () => {

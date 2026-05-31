@@ -314,6 +314,9 @@ export function AmrLoginPill({
           setErrorMessage(null);
           return;
         }
+        if (!next.loginInFlight) {
+          suppressLoginInFlightRef.current = false;
+        }
         if (next.loginInFlight && !suppressLoginInFlightRef.current) {
           setErrorMessage(null);
           setPending('login');
