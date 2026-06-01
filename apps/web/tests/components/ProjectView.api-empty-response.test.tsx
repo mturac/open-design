@@ -729,6 +729,52 @@ describe('ProjectView API empty response handling', () => {
     );
   });
 
+  it('does not inherit a grouped site when regenerating a legacy index owner', async () => {
+    mockedFetchProjectFiles.mockResolvedValue([
+      htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
+      htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
+      htmlProjectFile('index-2.html', 50, {
+        artifactIdentifier: 'index',
+        artifactGroupIdentifier: 'site-b',
+      }),
+      htmlProjectFile('about-2.html', 60, {
+        artifactIdentifier: 'about',
+        artifactGroupIdentifier: 'site-b',
+      }),
+    ] as never);
+    mockedWriteProjectTextFile.mockResolvedValue(htmlProjectFile('index.html', 70) as never);
+    const artifact =
+      '<artifact identifier="index" type="text/html" title="Legacy Site">' +
+      '<!doctype html><html><head><title>Home</title></head><body>' +
+      '<main><h1>Home</h1><a href="about.html">About</a></main>' +
+      '</body></html>' +
+      '</artifact>';
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta(artifact);
+      handlers.onDone('');
+    });
+    renderProjectView();
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalled();
+    });
+    const [, fileName, content, options] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
+    expect(fileName).toBe('index.html');
+    expect(content).toContain('href="about.html"');
+    expect(content).not.toContain('href="about-2.html"');
+    expect(options?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
+      'html-artifact:index.html',
+    );
+  });
+
   it('injects ElevenLabs voice options into API-mode audio project prompts', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

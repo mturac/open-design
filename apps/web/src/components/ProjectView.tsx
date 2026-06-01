@@ -1160,7 +1160,7 @@ export function ProjectView({
       });
       const artifactGroupIdentifier =
         ext === '.html'
-          ? htmlArtifactGroupIdentifierFor(art, currentProjectFiles, fileName, {
+          ? htmlArtifactGroupIdentifierFor(currentProjectFiles, fileName, {
               canReuseExistingGroup:
                 canOverwriteExistingEntry || savedArtifactRef.current === fileName,
             })
@@ -4641,7 +4641,6 @@ function artifactBaseNameFor(art: Artifact): string {
 }
 
 function htmlArtifactGroupIdentifierFor(
-  art: Artifact,
   projectFiles: ProjectFile[],
   fileName: string,
   options: { canReuseExistingGroup: boolean },
@@ -4652,22 +4651,6 @@ function htmlArtifactGroupIdentifierFor(
   );
   if (options.canReuseExistingGroup && existingFileGroup) {
     return existingFileGroup;
-  }
-
-  if (options.canReuseExistingGroup) {
-    const identifier = normalizeArtifactGroupSegment(art.identifier);
-    if (identifier) {
-      const existingGroup = projectFiles
-        .filter((file) => {
-          return normalizeArtifactGroupSegment(file.artifactManifest?.metadata?.identifier) === identifier;
-        })
-        .sort((a, b) => b.mtime - a.mtime)
-        .map((file) => file.artifactManifest?.metadata?.artifactGroupIdentifier)
-        .find((value): value is string => {
-          return typeof value === 'string' && normalizeArtifactGroupSegment(value).length > 0;
-        });
-      if (existingGroup) return existingGroup;
-    }
   }
 
   return `html-artifact:${fileName}`;
