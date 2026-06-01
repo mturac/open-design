@@ -51,7 +51,7 @@ describe('resolveHtmlArtifactFileName', () => {
 });
 
 describe('canOverwriteHtmlArtifactEntry', () => {
-  it('allows index.html overwrite when the existing manifest identifier matches', () => {
+  it('allows index.html overwrite when the saved artifact already owns it', () => {
     expect(
       canOverwriteHtmlArtifactEntry({
         baseName: 'index',
@@ -59,20 +59,22 @@ describe('canOverwriteHtmlArtifactEntry', () => {
         projectFiles: [
           htmlFile('index.html', 10, { artifactIdentifier: 'index' }),
         ],
-        artifactIdentifier: 'index',
+        savedArtifactName: 'index.html',
       }),
     ).toBe(true);
   });
 
-  it('rejects index.html overwrite when the existing manifest identifier is empty', () => {
+  it('rejects index.html overwrite when only the shared manifest identifier matches', () => {
     expect(
       canOverwriteHtmlArtifactEntry({
         baseName: 'index',
         ext: '.html',
         projectFiles: [
-          htmlFile('index.html', 10, { artifactIdentifier: '' }),
+          htmlFile('index.html', 10, {
+            artifactIdentifier: 'index',
+            artifactGroupIdentifier: 'site-a',
+          }),
         ],
-        artifactIdentifier: '',
       }),
     ).toBe(false);
   });

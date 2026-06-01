@@ -558,7 +558,7 @@ describe('ProjectView API empty response handling', () => {
     expect(screen.queryByText(/Refused to save artifact/i)).toBeNull();
   });
 
-  it('keeps regenerated multipage artifact entry at index.html and rewrites child links', async () => {
+  it('relocates a new multipage artifact away from an existing grouped index owner', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10, {
         artifactIdentifier: 'index',
@@ -597,9 +597,13 @@ describe('ProjectView API empty response handling', () => {
     await waitFor(() => {
       expect(mockedWriteProjectTextFile).toHaveBeenCalled();
     });
-    const [, fileName, content] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
-    expect(fileName).toBe('index.html');
-    expect(content).toContain('href="about-2.html"');
+    const [, fileName, content, options] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
+    expect(fileName).toBe('index-2.html');
+    expect(content).toContain('href="about.html"');
+    expect(content).not.toContain('href="about-2.html"');
+    expect(options?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
+      'html-artifact:index-2.html',
+    );
   });
 
   it('does not overwrite an unrelated existing index.html when saving a multipage artifact', async () => {
@@ -646,7 +650,7 @@ describe('ProjectView API empty response handling', () => {
   it('starts a fresh group when a new index artifact is relocated away from an existing owner', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10, {
-        artifactIdentifier: 'Index',
+        artifactIdentifier: 'index',
         artifactGroupIdentifier: 'site-a',
       }),
       htmlProjectFile('about.html', 20, {
@@ -691,7 +695,7 @@ describe('ProjectView API empty response handling', () => {
     );
   });
 
-  it('rewrites child links for legacy multipage artifacts without group metadata', async () => {
+  it('relocates legacy multipage artifacts without group metadata and rewrites child links', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
       htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
@@ -722,14 +726,14 @@ describe('ProjectView API empty response handling', () => {
       expect(mockedWriteProjectTextFile).toHaveBeenCalled();
     });
     const [, fileName, content, options] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
-    expect(fileName).toBe('index.html');
+    expect(fileName).toBe('index-2.html');
     expect(content).toContain('href="about-2.html"');
     expect(options?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
-      'html-artifact:index.html',
+      'html-artifact:index-2.html',
     );
   });
 
-  it('does not inherit a grouped site when regenerating a legacy index owner', async () => {
+  it('does not inherit a grouped site when an existing legacy index also collides', async () => {
     mockedFetchProjectFiles.mockResolvedValue([
       htmlProjectFile('index.html', 10, { artifactIdentifier: 'index' }),
       htmlProjectFile('about.html', 20, { artifactIdentifier: 'about' }),
@@ -767,11 +771,11 @@ describe('ProjectView API empty response handling', () => {
       expect(mockedWriteProjectTextFile).toHaveBeenCalled();
     });
     const [, fileName, content, options] = mockedWriteProjectTextFile.mock.calls.at(-1) ?? [];
-    expect(fileName).toBe('index.html');
+    expect(fileName).toBe('index-3.html');
     expect(content).toContain('href="about.html"');
     expect(content).not.toContain('href="about-2.html"');
     expect(options?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
-      'html-artifact:index.html',
+      'html-artifact:index-3.html',
     );
   });
 

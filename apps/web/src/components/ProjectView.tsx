@@ -1149,7 +1149,6 @@ export function ProjectView({
         ext,
         projectFiles: currentProjectFiles,
         savedArtifactName: savedArtifactRef.current,
-        artifactIdentifier: art.identifier,
       });
       const fileName = resolveHtmlArtifactFileName({
         baseName,

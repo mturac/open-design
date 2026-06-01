@@ -46,21 +46,13 @@ export function canOverwriteHtmlArtifactEntry(input: {
   ext: '.html' | '.jsx' | '.tsx';
   projectFiles: readonly HtmlLinkProjectFile[];
   savedArtifactName?: string | null;
-  artifactIdentifier?: string;
 }): boolean {
   if (input.ext !== '.html' || input.baseName.toLowerCase() !== 'index') return false;
   if (input.savedArtifactName === 'index.html') return true;
   const existingIndex = input.projectFiles.find((file) => {
     return file.name === 'index.html' || file.path === 'index.html';
   });
-  if (!existingIndex) return true;
-  const manifest = existingIndex.artifactManifest;
-  const artifactIdentifier = input.artifactIdentifier ?? '';
-  return (
-    artifactIdentifier.length > 0 &&
-    manifest?.entry === 'index.html' &&
-    manifest.metadata?.identifier === artifactIdentifier
-  );
+  return !existingIndex;
 }
 
 export function rewriteHtmlLinksToCurrentProjectFiles(
