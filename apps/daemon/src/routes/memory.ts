@@ -585,6 +585,10 @@ export function registerMemoryRoutes(app: Express, ctx: RegisterMemoryRoutesDeps
             apiVersion:
               typeof chatConfig.apiVersion === 'string' ? chatConfig.apiVersion : '',
             model: typeof chatConfig.model === 'string' ? chatConfig.model : '',
+            anthropicBaseUrlMode:
+              provider === 'anthropic' && chatConfig.anthropicBaseUrlMode === 'messages-endpoint'
+                ? 'messages-endpoint'
+                : 'api-root',
           };
         }
       }

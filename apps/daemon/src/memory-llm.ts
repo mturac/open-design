@@ -512,6 +512,12 @@ async function pickProvider(projectRoot, dataDir, chatAgentId, chatProvider, cha
           apiKey,
           model: envOverrideModel || explicitModel || defaults.model,
           baseUrl,
+          anthropicBaseUrlMode:
+            chatProvider.provider === 'anthropic'
+              ? (chatProvider.anthropicBaseUrlMode === 'messages-endpoint'
+                  ? 'messages-endpoint'
+                  : 'api-root')
+              : '',
           apiVersion:
             chatProvider.provider === 'azure'
               ? (typeof chatProvider.apiVersion === 'string'
@@ -680,7 +686,10 @@ function describeFetchError(err) {
 async function callAnthropic(provider, system, user) {
   let resp;
   try {
-    resp = await fetch(appendVersionedApiPath(provider.baseUrl, '/messages'), {
+    const url = provider.anthropicBaseUrlMode === 'messages-endpoint'
+      ? provider.baseUrl
+      : appendVersionedApiPath(provider.baseUrl, '/messages');
+    resp = await fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',

@@ -24,6 +24,7 @@ const dataDir = process.env.OD_DATA_DIR as string;
 let baseUrl: string;
 let server: http.Server;
 const originalFetch = globalThis.fetch;
+let externalFetchUrls: string[] = [];
 
 interface SseEvent {
   event: string;
@@ -52,6 +53,18 @@ beforeAll(async () => {
         ? input.toString()
         : input.url;
     if (url.startsWith(baseUrl)) return originalFetch(input, init);
+    externalFetchUrls.push(url);
+    if (url.includes('/messages')) {
+      return new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: '{"entries":[]}' }],
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    }
     return new Response(
       JSON.stringify({
         choices: [{ message: { content: '[]' } }],
@@ -72,7 +85,20 @@ afterAll(async () => {
 beforeEach(async () => {
   await fsp.rm(memoryDir(dataDir), { recursive: true, force: true });
   __resetExtractionsForTests();
+  externalFetchUrls = [];
 });
+
+async function waitForExternalFetchUrl(
+  predicate: (url: string) => boolean,
+): Promise<string> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const match = externalFetchUrls.find(predicate);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for external fetch; saw: ${externalFetchUrls.join(', ')}`);
+}
 
 async function readNextSseEvent(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -371,6 +397,37 @@ describe('memory routes', () => {
     };
     expect(json.attemptedLLM).toBe(true);
     expect(json.changed).toEqual([]);
+  });
+
+  it('keeps Anthropic messages endpoint URLs intact for background extraction', async () => {
+    const fullEndpoint = 'https://proxy.example.test/custom/v1/messages';
+    const res = await fetch(`${baseUrl}/api/memory/extract`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userMessage: 'Remember that I use a full Anthropic messages endpoint.',
+        assistantMessage: 'Got it.',
+        chatProvider: {
+          provider: 'anthropic',
+          apiKey: 'sk-ant-test',
+          baseUrl: fullEndpoint,
+          anthropicBaseUrlMode: 'messages-endpoint',
+          model: 'claude-haiku-4-5',
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const json = await res.json() as {
+      changed: Array<unknown>;
+      attemptedLLM: boolean;
+    };
+    expect(json.attemptedLLM).toBe(true);
+
+    const requestedUrl = await waitForExternalFetchUrl((url) =>
+      url.startsWith('https://proxy.example.test/'),
+    );
+    expect(requestedUrl).toBe(fullEndpoint);
   });
 
   it('returns the composed system prompt body from indexed memory entries', async () => {
