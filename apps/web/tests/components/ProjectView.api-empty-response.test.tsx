@@ -779,6 +779,84 @@ describe('ProjectView API empty response handling', () => {
     );
   });
 
+  it('reuses a relocated artifact group when reclaiming index.html', async () => {
+    let filesSnapshot = [
+      htmlProjectFile('index.html', 10, {
+        artifactIdentifier: 'index',
+        artifactGroupIdentifier: 'site-a',
+      }),
+    ];
+    mockedFetchProjectFiles.mockImplementation(async () => filesSnapshot as never);
+    mockedWriteProjectTextFile.mockImplementation(async (_projectId, fileName) => {
+      if (fileName === 'index-2.html') {
+        filesSnapshot = [
+          htmlProjectFile('index-2.html', 50, {
+            artifactIdentifier: 'index',
+            artifactGroupIdentifier: 'html-artifact:index-2.html',
+          }),
+          htmlProjectFile('about-2.html', 60, {
+            artifactIdentifier: 'about',
+            artifactGroupIdentifier: 'html-artifact:index-2.html',
+          }),
+        ];
+      }
+      return htmlProjectFile(String(fileName), 70) as never;
+    });
+    const artifact =
+      '<artifact identifier="index" type="text/html" title="Multipage Site">' +
+      '<!doctype html><html><head><title>Home</title></head><body>' +
+      '<main><h1>Home</h1><a href="about.html">About</a></main>' +
+      '</body></html>' +
+      '</artifact>';
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta(artifact);
+      handlers.onDone('');
+    });
+    renderProjectView();
+    await waitFor(() => {
+      expect(mockedFetchProjectFiles).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(mockedListMessages).toHaveBeenCalledWith(project.id, 'conv-project-1');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const fetchCallsBeforeFirstSave = mockedFetchProjectFiles.mock.calls.length;
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(1);
+    });
+    const [, firstFileName, , firstOptions] = mockedWriteProjectTextFile.mock.calls[0] ?? [];
+    expect(firstFileName).toBe('index-2.html');
+    expect(firstOptions?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
+      'html-artifact:index-2.html',
+    );
+    await waitFor(() => {
+      expect(mockedFetchProjectFiles.mock.calls.length).toBeGreaterThan(fetchCallsBeforeFirstSave);
+    });
+
+    await sendTestPrompt();
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(2);
+    });
+    const [, secondFileName, secondContent, secondOptions] =
+      mockedWriteProjectTextFile.mock.calls[1] ?? [];
+    expect(secondFileName).toBe('index.html');
+    expect(secondContent).toContain('href="about-2.html"');
+    expect(secondOptions?.artifactManifest?.metadata?.artifactGroupIdentifier).toBe(
+      'html-artifact:index-2.html',
+    );
+  });
+
   it('injects ElevenLabs voice options into API-mode audio project prompts', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -1162,6 +1162,7 @@ export function ProjectView({
           ? htmlArtifactGroupIdentifierFor(currentProjectFiles, fileName, {
               canReuseExistingGroup:
                 canOverwriteExistingEntry || savedArtifactRef.current === fileName,
+              savedArtifactName: savedArtifactRef.current,
             })
           : undefined;
       const html =
@@ -2400,7 +2401,6 @@ export function ProjectView({
       markStreamingConversation(runConversationId);
       updateConversationLatestRun(config.mode === 'daemon' ? 'running' : 'queued');
       setArtifact(null);
-      savedArtifactRef.current = null;
       onTouchProject();
       if (!retryTarget) persistMessage(userMsg);
       // Intentionally do NOT persist `assistantMsg` here. In daemon mode it
@@ -4642,14 +4642,21 @@ function artifactBaseNameFor(art: Artifact): string {
 function htmlArtifactGroupIdentifierFor(
   projectFiles: ProjectFile[],
   fileName: string,
-  options: { canReuseExistingGroup: boolean },
+  options: { canReuseExistingGroup: boolean; savedArtifactName?: string | null },
 ): string {
-  const existingFile = projectFiles.find((file) => file.name === fileName || file.path === fileName);
-  const existingFileGroup = existingArtifactGroupIdentifier(
-    existingFile?.artifactManifest?.metadata?.artifactGroupIdentifier,
-  );
-  if (options.canReuseExistingGroup && existingFileGroup) {
-    return existingFileGroup;
+  if (options.canReuseExistingGroup) {
+    const reuseCandidates = [fileName, options.savedArtifactName].filter(
+      (name): name is string => typeof name === 'string' && name.length > 0,
+    );
+    for (const candidateName of reuseCandidates) {
+      const existingFile = projectFiles.find((file) => (
+        file.name === candidateName || file.path === candidateName
+      ));
+      const existingFileGroup = existingArtifactGroupIdentifier(
+        existingFile?.artifactManifest?.metadata?.artifactGroupIdentifier,
+      );
+      if (existingFileGroup) return existingFileGroup;
+    }
   }
 
   return `html-artifact:${fileName}`;
