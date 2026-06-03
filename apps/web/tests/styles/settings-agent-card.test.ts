@@ -57,5 +57,8 @@ describe('Settings agent card styles', () => {
     expect(ruleValue('.agent-card-installed.active .agent-card-meta', 'overflow')).toBe(
       'visible',
     );
+    expect(ruleValue('.agent-card-installed.active .agent-card-meta', 'overflow-wrap')).toBe(
+      'anywhere',
+    );
   });
 });

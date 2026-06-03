@@ -1163,6 +1163,7 @@
 .agent-card-installed.active .agent-card-meta {
   margin-top: 1px;
   overflow: visible;
+  overflow-wrap: anywhere;
   text-overflow: clip;
   white-space: normal;
 }
