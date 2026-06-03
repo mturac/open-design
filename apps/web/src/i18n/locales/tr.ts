@@ -2590,7 +2590,7 @@ export const tr: Dict = {
   'settings.skillsSave': 'Kaydet',
   'settings.skillsSaveOverride': 'Kullanıcı geçersiz kılması olarak kaydet',
   'settings.skillsOverrideWarning':
-    'Yerleşik bir yeteneği düzenlemek, özgünü değiştirmeden özelleştirebileceğiniz bir kullanıcı kopyası oluşturur.',
+    'Bu yerleşik yeteneği düzenlemek bir kullanıcı geçersiz kılması oluşturur. Geçersiz kılmayı silene kadar yerleşik kayıt listeden gizlenir. Devam edilsin mi?',
   'settings.skillsSaving': 'Kaydediliyor…',
   'settings.skillsFiles': 'Dosyalar',
   'settings.skillsNoFiles': 'Bu yetenek klasöründe dosya yok.',

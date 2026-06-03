@@ -2590,7 +2590,7 @@ export const it: Dict = {
   'settings.skillsSave': 'Salva',
   'settings.skillsSaveOverride': 'Salva come override utente',
   'settings.skillsOverrideWarning':
-    'Modificare una competenza integrata creerà una copia utente che puoi personalizzare senza cambiare l\'originale.',
+    'Modificare questa competenza integrata creerà un override utente. La voce integrata sarà nascosta dall\'elenco finché non elimini l\'override. Continuare?',
   'settings.skillsSaving': 'Salvataggio…',
   'settings.skillsFiles': 'File',
   'settings.skillsNoFiles': 'Nessun file in questa cartella di competenza.',

@@ -2590,7 +2590,7 @@ export const ptBR: Dict = {
   'settings.skillsSave': 'Salvar',
   'settings.skillsSaveOverride': 'Salvar como substituição do usuário',
   'settings.skillsOverrideWarning':
-    'Editar uma habilidade integrada criará uma cópia do usuário que você pode personalizar sem alterar a original.',
+    'Editar esta habilidade integrada criará uma substituição do usuário. A entrada integrada ficará oculta na lista até você excluir a substituição. Continuar?',
   'settings.skillsSaving': 'Salvando…',
   'settings.skillsFiles': 'Arquivos',
   'settings.skillsNoFiles': 'Nenhum arquivo nesta pasta de habilidade.',

@@ -2590,7 +2590,7 @@ export const id: Dict = {
   'settings.skillsSave': 'Simpan',
   'settings.skillsSaveOverride': 'Simpan sebagai override pengguna',
   'settings.skillsOverrideWarning':
-    'Mengedit keterampilan bawaan akan membuat salinan pengguna yang dapat Anda sesuaikan tanpa mengubah aslinya.',
+    'Mengedit keterampilan bawaan ini akan membuat override pengguna. Entri bawaan akan disembunyikan dari daftar sampai override dihapus. Lanjutkan?',
   'settings.skillsSaving': 'Menyimpan…',
   'settings.skillsFiles': 'Berkas',
   'settings.skillsNoFiles': 'Tidak ada berkas dalam folder keterampilan ini.',

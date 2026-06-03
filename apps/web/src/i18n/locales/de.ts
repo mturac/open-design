@@ -2590,7 +2590,7 @@ export const de: Dict = {
   'settings.skillsSave': 'Speichern',
   'settings.skillsSaveOverride': 'Als Benutzer-Override speichern',
   'settings.skillsOverrideWarning':
-    'Beim Bearbeiten eines integrierten Skills wird eine Benutzerkopie erstellt, die du anpassen kannst, ohne den ursprünglichen Skill zu ändern.',
+    'Beim Bearbeiten dieses integrierten Skills wird ein Benutzer-Override erstellt. Der integrierte Eintrag wird in der Liste ausgeblendet, bis du den Override löschst. Fortfahren?',
   'settings.skillsSaving': 'Speichern…',
   'settings.skillsFiles': 'Dateien',
   'settings.skillsNoFiles': 'Keine Dateien in diesem Skill-Ordner.',

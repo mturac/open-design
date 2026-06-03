@@ -2590,7 +2590,7 @@ export const fa: Dict = {
   'settings.skillsSave': 'ذخیره',
   'settings.skillsSaveOverride': 'ذخیره به‌عنوان بازنویسی کاربر',
   'settings.skillsOverrideWarning':
-    'ویرایش یک مهارت داخلی، یک نسخه کاربری می‌سازد که می‌توانید بدون تغییر نسخه اصلی سفارشی کنید.',
+    'ویرایش این مهارت داخلی یک بازنویسی کاربر ایجاد می‌کند. ورودی داخلی تا زمانی که بازنویسی را حذف کنید از فهرست پنهان می‌شود. ادامه می‌دهید؟',
   'settings.skillsSaving': 'در حال ذخیره…',
   'settings.skillsFiles': 'فایل‌ها',
   'settings.skillsNoFiles': 'هیچ فایلی در این پوشه مهارت نیست.',

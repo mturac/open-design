@@ -264,7 +264,7 @@ describe('SkillsSection', () => {
     fireEvent.click(within(row).getByTestId('skills-edit'));
 
     const warning = await within(row).findByTestId('skills-edit-builtin-warning');
-    expect(warning.textContent).toContain('Benutzerkopie');
+    expect(warning.textContent).toContain('ausgeblendet');
     expect(
       within(warning).getByRole('button', { name: 'Benutzer-Override erstellen' }),
     ).toBeTruthy();

@@ -2590,7 +2590,7 @@ export const esES: Dict = {
   'settings.skillsSave': 'Guardar',
   'settings.skillsSaveOverride': 'Guardar como sobrescritura de usuario',
   'settings.skillsOverrideWarning':
-    'Editar una habilidad integrada creará una copia de usuario que puedes personalizar sin cambiar la original.',
+    'Editar esta habilidad integrada creará una sobrescritura de usuario. La entrada integrada se ocultará de la lista hasta que elimines la sobrescritura. ¿Continuar?',
   'settings.skillsSaving': 'Guardando…',
   'settings.skillsFiles': 'Archivos',
   'settings.skillsNoFiles': 'No hay archivos en esta carpeta de habilidad.',

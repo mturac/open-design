@@ -2590,7 +2590,7 @@ export const ko: Dict = {
   'settings.skillsCreateOverride': '사용자 재정의 만들기',
   'settings.skillsSaveOverride': '사용자 재정의로 저장',
   'settings.skillsOverrideWarning':
-    '내장 스킬을 편집하면 원본을 변경하지 않고 사용자 지정할 수 있는 사용자 복사본이 만들어집니다.',
+    '이 내장 스킬을 편집하면 사용자 재정의가 생성됩니다. 재정의를 삭제할 때까지 내장 항목은 목록에서 숨겨집니다. 계속할까요?',
   'settings.skillsSaving': '저장 중…',
   'settings.skillsFiles': '파일',
   'settings.skillsNoFiles': '이 스킬 폴더에 파일이 없습니다.',

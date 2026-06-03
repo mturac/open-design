@@ -2590,7 +2590,7 @@ export const pl: Dict = {
   'settings.skillsSave': 'Zapisz',
   'settings.skillsSaveOverride': 'Zapisz jako nadpisanie użytkownika',
   'settings.skillsOverrideWarning':
-    'Edycja wbudowanej umiejętności utworzy kopię użytkownika, którą można dostosować bez zmiany oryginału.',
+    'Edycja tej wbudowanej umiejętności utworzy nadpisanie użytkownika. Wbudowany wpis będzie ukryty na liście, dopóki nie usuniesz nadpisania. Kontynuować?',
   'settings.skillsSaving': 'Zapisywanie…',
   'settings.skillsFiles': 'Pliki',
   'settings.skillsNoFiles': 'Brak plików w tym folderze umiejętności.',

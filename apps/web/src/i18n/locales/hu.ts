@@ -2590,7 +2590,7 @@ export const hu: Dict = {
   'settings.skillsSave': 'Mentés',
   'settings.skillsSaveOverride': 'Mentés felhasználói felülírásként',
   'settings.skillsOverrideWarning':
-    'A beépített készség szerkesztése felhasználói másolatot hoz létre, amelyet az eredeti módosítása nélkül testre szabhatsz.',
+    'Ennek a beépített készségnek a szerkesztése felhasználói felülírást hoz létre. A beépített bejegyzés el lesz rejtve a listából, amíg nem törlöd a felülírást. Folytatod?',
   'settings.skillsSaving': 'Mentés…',
   'settings.skillsFiles': 'Fájlok',
   'settings.skillsNoFiles': 'Nincs fájl ebben a készségmappában.',

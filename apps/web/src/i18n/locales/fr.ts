@@ -2590,7 +2590,7 @@ export const fr: Dict = {
   'settings.skillsSave': 'Enregistrer',
   'settings.skillsSaveOverride': 'Enregistrer comme surcharge utilisateur',
   'settings.skillsOverrideWarning':
-    'Modifier une compétence intégrée créera une copie utilisateur que vous pourrez personnaliser sans changer l’original.',
+    'Modifier cette compétence intégrée créera une surcharge utilisateur. L’entrée intégrée sera masquée dans la liste jusqu’à la suppression de la surcharge. Continuer ?',
   'settings.skillsSaving': 'Enregistrement…',
   'settings.skillsFiles': 'Fichiers',
   'settings.skillsNoFiles': 'Aucun fichier dans ce dossier de compétence.',

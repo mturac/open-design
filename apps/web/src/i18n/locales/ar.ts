@@ -2590,7 +2590,7 @@ export const ar: Dict = {
   'settings.skillsSave': 'حفظ',
   'settings.skillsSaveOverride': 'حفظ كتجاوز للمستخدم',
   'settings.skillsOverrideWarning':
-    'سيؤدي تعديل مهارة مدمجة إلى إنشاء نسخة مستخدم يمكنك تخصيصها دون تغيير النسخة الأصلية.',
+    'سيؤدي تعديل هذه المهارة المدمجة إلى إنشاء تجاوز للمستخدم. سيُخفى الإدخال المدمج من القائمة حتى تحذف التجاوز. هل تريد المتابعة؟',
   'settings.skillsSaving': 'جاري الحفظ…',
   'settings.skillsFiles': 'الملفات',
   'settings.skillsNoFiles': 'لا توجد ملفات في مجلد هذه المهارة.',

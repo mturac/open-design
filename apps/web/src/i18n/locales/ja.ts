@@ -2590,7 +2590,7 @@ export const ja: Dict = {
   'settings.skillsCreateOverride': 'ユーザー上書きを作成',
   'settings.skillsSaveOverride': 'ユーザー上書きとして保存',
   'settings.skillsOverrideWarning':
-    '組み込みスキルを編集すると、元のスキルを変更せずにカスタマイズできるユーザーコピーが作成されます。',
+    'この組み込みスキルを編集すると、ユーザー上書きが作成されます。上書きを削除するまで、組み込み項目は一覧から非表示になります。続行しますか？',
   'settings.skillsSaving': '保存中…',
   'settings.skillsFiles': 'ファイル',
   'settings.skillsNoFiles': 'このスキルフォルダーにファイルはありません。',
