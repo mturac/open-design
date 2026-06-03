@@ -1768,6 +1768,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
         if (scrollOverflow(node) > 1 && isScrollableOverflowMode(mode)) {
           foundNested = true;
           add(node);
+          break;
         }
         node = node.parentElement;
       }
@@ -1798,6 +1799,12 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     }
     return active || targets[0] || null;
   }
+  function hasNestedScrollTarget(targets){
+    for (var i=0; i<targets.length; i++) {
+      if (!isRootScrollContainer(targets[i])) return true;
+    }
+    return false;
+  }
   function maxScrollLeft(){
     var targets = scrollTargets();
     var value = 0;
@@ -1805,6 +1812,30 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
       value = Math.max(value, Number(targets[i].scrollLeft || 0));
     }
     return value;
+  }
+  function slideScrollLeftFor(target, list, index){
+    if (target && !isRootScrollContainer(target) && list && list[index]) {
+      var slideLeft = Number(list[index].offsetLeft || 0);
+      var targetLeft = Number(target.offsetLeft || 0);
+      var relative = Math.max(0, slideLeft - targetLeft);
+      if (relative > 0 || index === 0) return relative;
+    }
+    return index * scrollWidthOf(target);
+  }
+  function activeIndexFromOffsets(target, list){
+    if (!target || !list || !list.length || isRootScrollContainer(target)) return -1;
+    var left = scrollLeftOf(target);
+    var best = 0;
+    var bestDistance = Infinity;
+    for (var i=0; i<list.length; i++) {
+      var candidate = slideScrollLeftFor(target, list, i);
+      var distance = Math.abs(candidate - left);
+      if (distance < bestDistance) {
+        best = i;
+        bestDistance = distance;
+      }
+    }
+    return best;
   }
   function hasHorizontalScroll(){
     var targets = scrollTargets();
@@ -1843,9 +1874,15 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   function activeIndex(list){
     if (!list || !list.length) return 0;
     if (isScrollDeck()) {
+      var targets = scrollTargets();
       var target = activeScrollTarget();
+      if (hasNestedScrollTarget(targets)) {
+        var offsetIndex = activeIndexFromOffsets(target, list);
+        if (offsetIndex >= 0) return Math.max(0, Math.min(list.length - 1, offsetIndex));
+      }
       var w = scrollWidthOf(target);
-      return Math.max(0, Math.min(list.length - 1, Math.round(scrollLeftOf(target) / w)));
+      var left = isRootScrollContainer(target) ? maxScrollLeft() : scrollLeftOf(target);
+      return Math.max(0, Math.min(list.length - 1, Math.round(left / w)));
     }
     var byTransform = activeIndexFromTransform(list);
     if (byTransform >= 0) return byTransform;
@@ -2009,7 +2046,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     var next = Math.max(0, Math.min(list.length - 1, i));
     var targets = scrollTargets();
     for (var t=0; t<targets.length; t++) {
-      var left = next * scrollWidthOf(targets[t]);
+      var left = slideScrollLeftFor(targets[t], list, next);
       try {
         targets[t].scrollTo({ left: left, behavior: 'smooth' });
       } catch (_) {
