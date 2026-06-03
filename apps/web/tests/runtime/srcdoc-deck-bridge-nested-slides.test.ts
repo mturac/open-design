@@ -165,6 +165,111 @@ describe('deck bridge — nested slide markup (#1530)', () => {
     expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
   });
 
+  it('scrolls a nested horizontal flex deck instead of translating the scroll container', async () => {
+    const { win, parentPostMessage } = setupDeckBridge(`
+      <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; }
+        .slide { flex: 0 0 100vw; width: 100vw; height: 100vh; scroll-snap-align: start; }
+      </style>
+      <div
+        id="deck-container"
+        class="deck-container"
+        style="display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;"
+      >
+        <section class="slide">One</section>
+        <section class="slide">Two</section>
+        <section class="slide">Three</section>
+      </div>
+    `);
+    Object.defineProperty(win, 'innerWidth', { configurable: true, value: 1000 });
+    const container = win.document.getElementById('deck-container') as HTMLElement;
+    Object.defineProperties(container, {
+      scrollWidth: { configurable: true, value: 3000 },
+      clientWidth: { configurable: true, value: 1000 },
+    });
+    const containerScrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      const left = typeof options === 'number' ? options : Number(options?.left || 0);
+      container.scrollLeft = left;
+    });
+    container.scrollTo = containerScrollTo;
+
+    postSlide(win, 'next');
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 450));
+
+    expect(containerScrollTo).toHaveBeenCalledWith({ left: 1000, behavior: 'smooth' });
+    expect(container.style.transform).toBe('');
+    expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
+  });
+
+  it('scrolls a nested horizontal grid deck before transform fallback', async () => {
+    const { win, parentPostMessage } = setupDeckBridge(`
+      <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; }
+        .slide { width: 100vw; height: 100vh; scroll-snap-align: start; }
+      </style>
+      <div
+        id="deck-container"
+        class="deck-container"
+        style="display: grid; grid-auto-flow: column; grid-auto-columns: 100vw; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;"
+      >
+        <section class="slide">One</section>
+        <section class="slide">Two</section>
+        <section class="slide">Three</section>
+      </div>
+    `);
+    Object.defineProperty(win, 'innerWidth', { configurable: true, value: 1000 });
+    const container = win.document.getElementById('deck-container') as HTMLElement;
+    Object.defineProperties(container, {
+      scrollWidth: { configurable: true, value: 3000 },
+      clientWidth: { configurable: true, value: 1000 },
+    });
+    container.scrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      const left = typeof options === 'number' ? options : Number(options?.left || 0);
+      container.scrollLeft = left;
+    });
+
+    postSlide(win, 'next');
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 450));
+
+    expect(container.scrollTo).toHaveBeenCalledWith({ left: 1000, behavior: 'smooth' });
+    expect(container.style.transform).toBe('');
+    expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
+  });
+
+  it('updates a plain in-artifact deck counter when host navigation drives the slide', async () => {
+    const { win } = setupDeckBridge(`
+      <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; }
+        .slide { flex: 0 0 100vw; width: 100vw; height: 100vh; scroll-snap-align: start; }
+      </style>
+      <div
+        id="deck-container"
+        class="deck-container"
+        style="display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;"
+      >
+        <section class="slide">One</section>
+        <section class="slide">Two</section>
+        <section class="slide">Three</section>
+      </div>
+      <div class="deck-counter" id="deck-counter">1 / 3</div>
+    `);
+    Object.defineProperty(win, 'innerWidth', { configurable: true, value: 1000 });
+    const container = win.document.getElementById('deck-container') as HTMLElement;
+    Object.defineProperties(container, {
+      scrollWidth: { configurable: true, value: 3000 },
+      clientWidth: { configurable: true, value: 1000 },
+    });
+    container.scrollTo = vi.fn((options?: ScrollToOptions | number) => {
+      const left = typeof options === 'number' ? options : Number(options?.left || 0);
+      container.scrollLeft = left;
+    });
+
+    postSlide(win, 'next');
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 450));
+
+    expect(win.document.getElementById('deck-counter')?.textContent).toBe('2 / 3');
+  });
+
   it('updates Simple Deck direct progress fill when host navigation drives the slide', async () => {
     const { win } = setupDeckBridge(`
       <style>

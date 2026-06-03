@@ -1759,10 +1759,31 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
       for (var i=0; i<targets.length; i++) if (targets[i] === node) return;
       targets.push(node);
     }
+    var list = slides();
+    if (list && list.length) {
+      var node = list[0] && list[0].parentElement;
+      while (node && node !== document.body && node !== document.documentElement) {
+        var mode = overflowMode(node);
+        if (scrollOverflow(node) > 1 && isScrollableOverflowMode(mode)) add(node);
+        node = node.parentElement;
+      }
+    }
     add(document.scrollingElement);
     add(document.documentElement);
     add(document.body);
     return targets;
+  }
+  function scrollWidthOf(el){
+    if (!el) return Math.max(1, window.innerWidth);
+    var width = Number(el.clientWidth || 0);
+    return width > 0 ? width : Math.max(1, window.innerWidth);
+  }
+  function activeScrollTarget(){
+    var targets = scrollTargets();
+    for (var i=0; i<targets.length; i++) {
+      if (scrollOverflow(targets[i]) > 1) return targets[i];
+    }
+    return targets[0] || null;
   }
   function maxScrollLeft(){
     var targets = scrollTargets();
@@ -1809,8 +1830,9 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   function activeIndex(list){
     if (!list || !list.length) return 0;
     if (isScrollDeck()) {
-      var w = Math.max(1, window.innerWidth);
-      return Math.max(0, Math.min(list.length - 1, Math.round(maxScrollLeft() / w)));
+      var target = activeScrollTarget();
+      var w = scrollWidthOf(target);
+      return Math.max(0, Math.min(list.length - 1, Math.round(scrollLeftOf(target) / w)));
     }
     var byTransform = activeIndexFromTransform(list);
     if (byTransform >= 0) return byTransform;
@@ -1879,6 +1901,10 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
           if (node.children[i].classList && node.children[i].classList.contains('slide')) directSlides += 1;
         }
         var style = window.getComputedStyle(node);
+        if (isScrollableOverflowMode(String(style.overflowX || '').toLowerCase())) {
+          node = node.parentElement;
+          continue;
+        }
         if (
           directSlides >= list.length &&
           (
@@ -1924,6 +1950,10 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
     if (total) total.textContent = pad2(count);
     if (prev) prev.toggleAttribute('disabled', i <= 0);
     if (next) next.toggleAttribute('disabled', i >= count - 1);
+    document.querySelectorAll('#deck-counter,.deck-counter').forEach(function(el){
+      var text = String(el.textContent || '');
+      if (/^\\s*\\d+\\s*\\/\\s*\\d+\\s*$/.test(text)) el.textContent = (i + 1) + ' / ' + count;
+    });
   }
   function setActive(i){
     var list = slides();
@@ -1961,15 +1991,16 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   function scrollGo(i){
     var list = slides();
     var next = Math.max(0, Math.min(list.length - 1, i));
-    var left = next * window.innerWidth;
     var targets = scrollTargets();
     for (var t=0; t<targets.length; t++) {
+      var left = next * scrollWidthOf(targets[t]);
       try {
         targets[t].scrollTo({ left: left, behavior: 'smooth' });
       } catch (_) {
         try { targets[t].scrollLeft = left; } catch (__) {}
       }
     }
+    updateDeckChrome(next, list.length);
     setTimeout(report, 380);
   }
   function targetFor(action, list){
