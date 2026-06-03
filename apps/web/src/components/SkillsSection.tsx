@@ -577,6 +577,10 @@ function SkillRow({
 }: SkillRowProps) {
   const t = useT();
   const { locale } = useI18n();
+  const editActionLabel =
+    skill.source === 'built-in' ? 'Create user override' : t('settings.skillsEdit');
+  const saveActionLabel =
+    skill.source === 'built-in' ? 'Save as user override' : t('settings.skillsSave');
   const summaryName = localizeSkillName(locale, skill) || skill.id;
   const summaryDescription = localizeSkillDescription(locale, skill);
   const canDelete = skill.source === 'user';
@@ -651,7 +655,7 @@ function SkillRow({
               <Button
                 size="icon"
                 onClick={onStartEdit}
-                title={t('settings.skillsEdit')}
+                title={editActionLabel}
                 data-testid="skills-edit"
               >
                 <Icon name="edit" size={13} />
@@ -709,7 +713,7 @@ function SkillRow({
               onClick={onConfirmBuiltInEdit}
               data-testid="skills-edit-builtin-confirm"
             >
-              {t('settings.skillsEdit')}
+              {editActionLabel}
             </button>
           </div>
         </div>
@@ -759,13 +763,14 @@ function SkillRow({
 
       {editing && draft ? (
         <SkillDraftForm
-          heading={t('settings.skillsEdit')}
+          heading={editActionLabel}
           subheading={skill.id}
           draft={draft}
           setDraft={setDraft}
           error={draftError}
           saving={draftSaving}
           isEdit
+          submitLabel={saveActionLabel}
           onCancel={onCancelEdit}
           onSubmit={onSubmitEdit}
         />
@@ -782,6 +787,7 @@ interface SkillDraftFormProps {
   error: string | null;
   saving: boolean;
   isEdit: boolean;
+  submitLabel?: string;
   onCancel: () => void;
   onSubmit: () => void;
 }
@@ -794,6 +800,7 @@ function SkillDraftForm({
   error,
   saving,
   isEdit,
+  submitLabel,
   onCancel,
   onSubmit,
 }: SkillDraftFormProps) {
@@ -875,9 +882,7 @@ function SkillDraftForm({
         >
           {saving
             ? t('settings.skillsSaving')
-            : isEdit
-              ? t('settings.skillsSave')
-              : t('settings.skillsCreate')}
+            : submitLabel ?? (isEdit ? t('settings.skillsSave') : t('settings.skillsCreate'))}
         </button>
       </div>
     </div>

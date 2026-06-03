@@ -187,10 +187,14 @@ describe('SkillsSection', () => {
     ]);
 
     const row = await screen.findByTestId('skill-row-builtin-skill');
+    expect(within(row).getByTitle('Create user override')).toBeTruthy();
     fireEvent.click(within(row).getByTestId('skills-edit'));
 
     const warning = await within(row).findByTestId('skills-edit-builtin-warning');
     expect(warning.textContent).toMatch(/override/i);
+    expect(
+      within(warning).getByRole('button', { name: 'Create user override' }),
+    ).toBeTruthy();
     expect(within(row).queryByTestId('skills-edit-form')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalledWith(
       '/api/skills/builtin-skill',
@@ -205,7 +209,11 @@ describe('SkillsSection', () => {
     fireEvent.click(
       await within(row).findByTestId('skills-edit-builtin-confirm'),
     );
-    expect(await within(row).findByTestId('skills-edit-form')).toBeTruthy();
+    const form = await within(row).findByTestId('skills-edit-form');
+    expect(within(form).getByRole('heading', { name: 'Create user override' })).toBeTruthy();
+    expect(
+      within(form).getByRole('button', { name: 'Save as user override' }),
+    ).toBeTruthy();
   });
 
   it('skips the override warning when editing a user skill', async () => {
@@ -218,10 +226,13 @@ describe('SkillsSection', () => {
     ]);
 
     const row = await screen.findByTestId('skill-row-user-skill');
+    expect(within(row).getByTitle('Edit')).toBeTruthy();
     fireEvent.click(within(row).getByTestId('skills-edit'));
 
     expect(within(row).queryByTestId('skills-edit-builtin-warning')).toBeNull();
-    expect(await within(row).findByTestId('skills-edit-form')).toBeTruthy();
+    const form = await within(row).findByTestId('skills-edit-form');
+    expect(within(form).getByRole('heading', { name: 'Edit' })).toBeTruthy();
+    expect(within(form).getByRole('button', { name: 'Save' })).toBeTruthy();
   });
 
   it('matches localized built-in skill names and descriptions in search', async () => {
