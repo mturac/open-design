@@ -1754,6 +1754,7 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   }
   function scrollTargets(){
     var targets = [];
+    var foundNested = false;
     function add(node){
       if (!node) return;
       for (var i=0; i<targets.length; i++) if (targets[i] === node) return;
@@ -1764,13 +1765,18 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
       var node = list[0] && list[0].parentElement;
       while (node && node !== document.body && node !== document.documentElement) {
         var mode = overflowMode(node);
-        if (scrollOverflow(node) > 1 && isScrollableOverflowMode(mode)) add(node);
+        if (scrollOverflow(node) > 1 && isScrollableOverflowMode(mode)) {
+          foundNested = true;
+          add(node);
+        }
         node = node.parentElement;
       }
     }
-    add(document.scrollingElement);
-    add(document.documentElement);
-    add(document.body);
+    if (!foundNested) {
+      add(document.scrollingElement);
+      add(document.documentElement);
+      add(document.body);
+    }
     return targets;
   }
   function scrollWidthOf(el){
@@ -1780,10 +1786,17 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   }
   function activeScrollTarget(){
     var targets = scrollTargets();
+    var active = null;
+    var activeLeft = -1;
     for (var i=0; i<targets.length; i++) {
-      if (scrollOverflow(targets[i]) > 1) return targets[i];
+      if (scrollOverflow(targets[i]) <= 1) continue;
+      var left = scrollLeftOf(targets[i]);
+      if (!active || left > activeLeft) {
+        active = targets[i];
+        activeLeft = left;
+      }
     }
-    return targets[0] || null;
+    return active || targets[0] || null;
   }
   function maxScrollLeft(){
     var targets = scrollTargets();
@@ -1901,7 +1914,10 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
           if (node.children[i].classList && node.children[i].classList.contains('slide')) directSlides += 1;
         }
         var style = window.getComputedStyle(node);
-        if (isScrollableOverflowMode(String(style.overflowX || '').toLowerCase())) {
+        if (
+          scrollOverflow(node) > 1 &&
+          isScrollableOverflowMode(String(style.overflowX || '').toLowerCase())
+        ) {
           node = node.parentElement;
           continue;
         }

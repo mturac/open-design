@@ -140,4 +140,80 @@ describe('deck bridge - transform-driven decks', () => {
       .filter((message) => message?.type === 'od:slide-state');
     expect(slideStates.at(-1)).toMatchObject({ active: 1, count: 3 });
   });
+
+  it('keeps transform fallback for auto-overflow tracks that are not scrollable', async () => {
+    const bodyHtml = `
+      <style>
+        html, body { margin: 0; overflow-x: hidden; }
+        .deck-shell { width: 100vw; overflow: hidden; }
+        .deck-track { display: flex; overflow-x: auto; transform: translateX(0vw); }
+        .slide { flex: 0 0 100vw; }
+      </style>
+      <div class="deck-shell">
+        <div class="deck-track" id="deck-track">
+          <section class="slide">One</section>
+          <section class="slide">Two</section>
+          <section class="slide">Three</section>
+        </div>
+      </div>
+    `;
+    const srcdoc = buildSrcdoc(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      deck: true,
+    });
+    const script = extractDeckBridgeScript(srcdoc);
+    const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    });
+    const win = dom.window;
+    const parentPostMessage = vi.fn();
+    Object.defineProperty(win, 'parent', {
+      configurable: true,
+      value: { postMessage: parentPostMessage },
+    });
+    Object.defineProperty(win, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.body, 'scrollWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.body, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.documentElement, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    const track = win.document.getElementById('deck-track') as HTMLElement;
+    Object.defineProperty(track, 'scrollWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(track, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+
+    const evaluate = new win.Function(script);
+    evaluate.call(win);
+    win.dispatchEvent(new win.Event('load'));
+
+    win.dispatchEvent(new win.MessageEvent('message', {
+      data: { type: 'od:slide', action: 'next' },
+    }));
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 360));
+
+    expect(track.style.transform).toBe('translateX(-100vw)');
+    const slideStates = parentPostMessage.mock.calls
+      .map((call) => call[0])
+      .filter((message) => message?.type === 'od:slide-state');
+    expect(slideStates.at(-1)).toMatchObject({ active: 1, count: 3 });
+  });
 });

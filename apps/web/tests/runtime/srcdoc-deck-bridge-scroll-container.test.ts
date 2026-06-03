@@ -204,4 +204,219 @@ describe('deck bridge - scroll container fallback', () => {
     expect(win.document.documentElement.scrollLeft).toBe(2000);
     expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 2, count: 3 });
   });
+
+  it('tracks slide state from body when documentElement scrollLeft stays at zero', async () => {
+    const bodyHtml = `
+      <style>
+        body { overflow-x: auto; }
+      </style>
+      <section class="slide">One</section>
+      <section class="slide">Two</section>
+      <section class="slide">Three</section>
+    `;
+    const srcdoc = buildSrcdoc(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      deck: true,
+    });
+    const script = extractDeckBridgeScript(srcdoc);
+    const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    });
+    const win = dom.window;
+    const parentPostMessage = vi.fn();
+    Object.defineProperty(win, 'parent', {
+      configurable: true,
+      value: { postMessage: parentPostMessage },
+    });
+    Object.defineProperty(win, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.body, 'scrollWidth', {
+      configurable: true,
+      value: 3000,
+    });
+    Object.defineProperty(win.document.body, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollWidth', {
+      configurable: true,
+      value: 3000,
+    });
+    Object.defineProperty(win.document.documentElement, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document, 'scrollingElement', {
+      configurable: true,
+      value: win.document.documentElement,
+    });
+    let bodyScrollLeft = 0;
+    let documentScrollLeft = 0;
+    Object.defineProperty(win.document.body, 'scrollLeft', {
+      configurable: true,
+      get: () => bodyScrollLeft,
+      set: (value: number) => {
+        bodyScrollLeft = value;
+      },
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollLeft', {
+      configurable: true,
+      get: () => documentScrollLeft,
+      set: (_value: number) => {
+        documentScrollLeft = 0;
+      },
+    });
+    Object.defineProperty(win.document.body, 'scrollTo', {
+      configurable: true,
+      value: ({ left }: { left?: number }) => {
+        if (typeof left === 'number') {
+          win.document.body.scrollLeft = left;
+        }
+      },
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollTo', {
+      configurable: true,
+      value: () => {},
+    });
+
+    const evaluate = new win.Function(script);
+    evaluate.call(win);
+    win.dispatchEvent(new win.Event('load'));
+
+    win.dispatchEvent(new win.MessageEvent('message', {
+      data: { type: 'od:slide', action: 'next' },
+    }));
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 420));
+
+    expect(win.document.documentElement.scrollLeft).toBe(0);
+    expect(win.document.body.scrollLeft).toBe(1000);
+    expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
+
+    win.dispatchEvent(new win.MessageEvent('message', {
+      data: { type: 'od:slide', action: 'next' },
+    }));
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 420));
+
+    expect(win.document.body.scrollLeft).toBe(2000);
+    expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 2, count: 3 });
+  });
+
+  it('scrolls only the nested deck container when the root also overflows', async () => {
+    const bodyHtml = `
+      <style>
+        body { overflow-x: auto; }
+        .outer { width: 1000px; overflow-x: auto; }
+        .track { display: flex; width: 3000px; }
+        .slide { flex: 0 0 1000px; }
+      </style>
+      <div class="outer" id="outer">
+        <div class="track">
+          <section class="slide">One</section>
+          <section class="slide">Two</section>
+          <section class="slide">Three</section>
+        </div>
+      </div>
+    `;
+    const srcdoc = buildSrcdoc(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      deck: true,
+    });
+    const script = extractDeckBridgeScript(srcdoc);
+    const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    });
+    const win = dom.window;
+    const parentPostMessage = vi.fn();
+    Object.defineProperty(win, 'parent', {
+      configurable: true,
+      value: { postMessage: parentPostMessage },
+    });
+    Object.defineProperty(win, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    const outer = win.document.getElementById('outer') as HTMLElement;
+    Object.defineProperty(outer, 'scrollWidth', {
+      configurable: true,
+      value: 3000,
+    });
+    Object.defineProperty(outer, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.body, 'scrollWidth', {
+      configurable: true,
+      value: 3000,
+    });
+    Object.defineProperty(win.document.body, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollWidth', {
+      configurable: true,
+      value: 3000,
+    });
+    Object.defineProperty(win.document.documentElement, 'clientWidth', {
+      configurable: true,
+      value: 1000,
+    });
+    let outerScrollLeft = 0;
+    let bodyScrollLeft = 0;
+    let documentScrollLeft = 0;
+    Object.defineProperty(outer, 'scrollLeft', {
+      configurable: true,
+      get: () => outerScrollLeft,
+      set: (value: number) => {
+        outerScrollLeft = value;
+      },
+    });
+    Object.defineProperty(win.document.body, 'scrollLeft', {
+      configurable: true,
+      get: () => bodyScrollLeft,
+      set: (value: number) => {
+        bodyScrollLeft = value;
+      },
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollLeft', {
+      configurable: true,
+      get: () => documentScrollLeft,
+      set: (value: number) => {
+        documentScrollLeft = value;
+      },
+    });
+    Object.defineProperty(outer, 'scrollTo', {
+      configurable: true,
+      value: ({ left }: { left?: number }) => {
+        if (typeof left === 'number') outer.scrollLeft = left;
+      },
+    });
+    Object.defineProperty(win.document.body, 'scrollTo', {
+      configurable: true,
+      value: ({ left }: { left?: number }) => {
+        if (typeof left === 'number') win.document.body.scrollLeft = left;
+      },
+    });
+    Object.defineProperty(win.document.documentElement, 'scrollTo', {
+      configurable: true,
+      value: ({ left }: { left?: number }) => {
+        if (typeof left === 'number') win.document.documentElement.scrollLeft = left;
+      },
+    });
+
+    const evaluate = new win.Function(script);
+    evaluate.call(win);
+    win.dispatchEvent(new win.Event('load'));
+
+    win.dispatchEvent(new win.MessageEvent('message', {
+      data: { type: 'od:slide', action: 'next' },
+    }));
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 420));
+
+    expect(outer.scrollLeft).toBe(1000);
+    expect(win.document.body.scrollLeft).toBe(0);
+    expect(win.document.documentElement.scrollLeft).toBe(0);
+    expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
+  });
 });
