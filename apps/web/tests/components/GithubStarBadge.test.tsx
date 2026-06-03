@@ -63,6 +63,39 @@ describe('GithubStarBadge', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('does not back off after effect cleanup aborts an in-flight request', async () => {
+    const fetchCalls: AbortSignal[] = [];
+    globalThis.fetch = vi.fn((_url, init) => {
+      const signal = (init as RequestInit | undefined)?.signal;
+      if (!(signal instanceof AbortSignal)) {
+        throw new Error('expected fetch to receive an AbortSignal');
+      }
+      fetchCalls.push(signal);
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          },
+          { once: true },
+        );
+      });
+    }) as typeof fetch;
+    const { GithubStarBadge } = await import('../../src/components/GithubStarBadge');
+
+    render(<GithubStarBadge />);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+
+    cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    render(<GithubStarBadge />);
+
+    expect(fetchCalls[0]?.aborted).toBe(true);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(2));
+  });
+
   it('renders the live star count returned by the daemon endpoint', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,

@@ -142,7 +142,10 @@ export function useGithubStars(): number | null {
         writePersistedCache(next);
         clearPersistedFailureAt();
         setCount(next.count);
-      } catch {
+      } catch (error) {
+        if (ctrl.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          return;
+        }
         // Network failures and rate-limit 403s both land here. The
         // caller keeps rendering its previous (or fallback) count.
         rememberFetchFailure();
