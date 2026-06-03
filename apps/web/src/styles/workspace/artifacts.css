@@ -1129,6 +1129,7 @@
     );
 }
 .agent-card-installed.active .agent-card-select {
+  align-items: flex-start;
   min-height: 78px;
   padding: 14px 18px 12px 22px;
 }
@@ -1140,9 +1141,30 @@
 }
 .agent-card-installed.active .agent-card-name {
   font-size: 13px;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.35;
+}
+.agent-card-installed.active .agent-card-title,
+.agent-card-installed.active .agent-card-tagline {
+  overflow-wrap: anywhere;
+}
+.agent-card-installed.active .agent-card-name-divider {
+  display: none;
+}
+.agent-card-installed.active .agent-card-tagline {
+  flex-basis: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 .agent-card-installed.active .agent-card-meta {
   margin-top: 1px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 .agent-card.disabled {
   cursor: not-allowed;
