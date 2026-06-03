@@ -49,6 +49,8 @@ import { trackRunProgress, trackRunStart, trackRunTerminal } from '../observabil
 const MAX_TRANSCRIPT_MESSAGE_CHARS = 12_000;
 const LARGE_TOOL_RESULT_CHARS = 8_000;
 const HIGH_INPUT_TOKEN_WARNING_THRESHOLD = 200_000;
+const FABRICATED_ASSISTANT_ROLE_MARKER_RE =
+  /(?:^|\n)[ \t]*##[ \t]+(?:user|assistant|assist|system)(?=[^a-z])/;
 
 export function latestUserPromptFromHistory(history: ChatMessage[]): string {
   for (let i = history.length - 1; i >= 0; i -= 1) {
@@ -65,7 +67,7 @@ function truncateForTranscript(content: string): string {
 }
 
 function escapeTranscriptRoleDelimiters(content: string): string {
-  return content.replace(/^(## (?:user|assistant)[ \t]*)(\r?)$/gm, '\\$1$2');
+  return content.replace(/^(## (?:user|assistant|assist|system)[ \t]*)(\r?)$/gm, '\\$1$2');
 }
 
 function compactInput(input: unknown): string {
@@ -166,6 +168,13 @@ export function sanitizePriorAssistantTurnForTranscript(content: string): string
       return match;
     },
   );
+  const fabricatedTurn = FABRICATED_ASSISTANT_ROLE_MARKER_RE.exec(sanitized);
+  if (fabricatedTurn) {
+    const prefix = sanitized.slice(0, fabricatedTurn.index).trimEnd();
+    const note =
+      '[Open Design removed fabricated conversation-turn text from a prior assistant response before sending it to the agent.]';
+    sanitized = prefix ? `${prefix}\n${note}` : note;
+  }
   return sanitized;
 }
 
