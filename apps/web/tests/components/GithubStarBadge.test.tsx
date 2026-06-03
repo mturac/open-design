@@ -10,7 +10,7 @@ describe('GithubStarBadge', () => {
   afterEach(() => {
     cleanup();
     globalThis.fetch = originalFetch;
-    window.localStorage.clear();
+    window.localStorage?.clear();
     vi.restoreAllMocks();
     vi.resetModules();
   });
@@ -29,6 +29,38 @@ describe('GithubStarBadge', () => {
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
+  });
+
+  it('backs off after an offline failure instead of retrying on every remount', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline')) as typeof fetch;
+    const { GithubStarBadge } = await import('../../src/components/GithubStarBadge');
+
+    render(<GithubStarBadge />);
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    render(<GithubStarBadge />);
+
+    expect(screen.getByText('40K+')).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs off when the daemon returns an offline 502 response', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false } satisfies Partial<Response>) as typeof fetch;
+    const { GithubStarBadge } = await import('../../src/components/GithubStarBadge');
+
+    render(<GithubStarBadge />);
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    cleanup();
+
+    render(<GithubStarBadge />);
+
+    expect(screen.getByText('40K+')).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('renders the live star count returned by the daemon endpoint', async () => {
