@@ -1815,12 +1815,28 @@ function injectDeckBridge(doc: string, initialSlideIndex = 0): string {
   }
   function slideScrollLeftFor(target, list, index){
     if (target && !isRootScrollContainer(target) && list && list[index]) {
-      var slideLeft = Number(list[index].offsetLeft || 0);
-      var targetLeft = Number(target.offsetLeft || 0);
-      var relative = Math.max(0, slideLeft - targetLeft);
+      var relative = offsetLeftWithin(list[index], target);
       if (relative > 0 || index === 0) return relative;
     }
     return index * scrollWidthOf(target);
+  }
+  function offsetLeftWithin(node, ancestor){
+    var left = 0;
+    var cur = node;
+    var guard = 0;
+    while (cur && cur !== ancestor && cur !== document.body && cur !== document.documentElement && guard < 50) {
+      left += Number(cur.offsetLeft || 0);
+      cur = cur.offsetParent || cur.parentElement;
+      guard += 1;
+    }
+    if (cur === ancestor) return Math.max(0, left);
+    try {
+      var nodeRect = node.getBoundingClientRect();
+      var ancestorRect = ancestor.getBoundingClientRect();
+      return Math.max(0, scrollLeftOf(ancestor) + nodeRect.left - ancestorRect.left);
+    } catch (_) {
+      return 0;
+    }
   }
   function activeIndexFromOffsets(target, list){
     if (!target || !list || !list.length || isRootScrollContainer(target)) return -1;

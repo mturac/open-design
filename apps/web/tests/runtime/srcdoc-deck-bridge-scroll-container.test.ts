@@ -591,4 +591,98 @@ describe('deck bridge - scroll container fallback', () => {
     expect(deckScroller.scrollLeft).toBe(920);
     expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
   });
+
+  it('computes nested slide offsets through positioned track coordinate space', async () => {
+    const bodyHtml = `
+      <style>
+        .deck-scroller { width: 800px; overflow-x: auto; }
+        .track { display: flex; gap: 120px; position: relative; left: 120px; }
+        .slide { flex: 0 0 800px; }
+      </style>
+      <div class="deck-scroller" id="deck-scroller">
+        <div class="track" id="track">
+          <section class="slide" id="slide-1">One</section>
+          <section class="slide" id="slide-2">Two</section>
+          <section class="slide" id="slide-3">Three</section>
+        </div>
+      </div>
+    `;
+    const srcdoc = buildSrcdoc(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      deck: true,
+    });
+    const script = extractDeckBridgeScript(srcdoc);
+    const dom = new JSDOM(`<!doctype html><html><body>${bodyHtml}</body></html>`, {
+      runScripts: 'outside-only',
+      pretendToBeVisual: true,
+    });
+    const win = dom.window;
+    const parentPostMessage = vi.fn();
+    Object.defineProperty(win, 'parent', {
+      configurable: true,
+      value: { postMessage: parentPostMessage },
+    });
+    Object.defineProperty(win, 'innerWidth', {
+      configurable: true,
+      value: 800,
+    });
+    const deckScroller = win.document.getElementById('deck-scroller') as HTMLElement;
+    const track = win.document.getElementById('track') as HTMLElement;
+    const slides = [
+      win.document.getElementById('slide-1') as HTMLElement,
+      win.document.getElementById('slide-2') as HTMLElement,
+      win.document.getElementById('slide-3') as HTMLElement,
+    ];
+    Object.defineProperty(deckScroller, 'scrollWidth', {
+      configurable: true,
+      value: 2760,
+    });
+    Object.defineProperty(deckScroller, 'clientWidth', {
+      configurable: true,
+      value: 800,
+    });
+    Object.defineProperty(track, 'offsetLeft', {
+      configurable: true,
+      value: 120,
+    });
+    Object.defineProperty(track, 'offsetParent', {
+      configurable: true,
+      value: deckScroller,
+    });
+    slides.forEach((slide, index) => {
+      Object.defineProperty(slide, 'offsetLeft', {
+        configurable: true,
+        value: index * 920,
+      });
+      Object.defineProperty(slide, 'offsetParent', {
+        configurable: true,
+        value: track,
+      });
+    });
+    let deckScrollLeft = 0;
+    Object.defineProperty(deckScroller, 'scrollLeft', {
+      configurable: true,
+      get: () => deckScrollLeft,
+      set: (value: number) => {
+        deckScrollLeft = value;
+      },
+    });
+    Object.defineProperty(deckScroller, 'scrollTo', {
+      configurable: true,
+      value: ({ left }: { left?: number }) => {
+        if (typeof left === 'number') deckScroller.scrollLeft = left;
+      },
+    });
+
+    const evaluate = new win.Function(script);
+    evaluate.call(win);
+    win.dispatchEvent(new win.Event('load'));
+
+    win.dispatchEvent(new win.MessageEvent('message', {
+      data: { type: 'od:slide', action: 'next' },
+    }));
+    await new Promise<void>((resolve) => win.setTimeout(resolve, 420));
+
+    expect(deckScroller.scrollLeft).toBe(1040);
+    expect(lastSlideState(parentPostMessage)).toMatchObject({ active: 1, count: 3 });
+  });
 });
