@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EntryShell } from '../../src/components/EntryShell';
+import { EntryShell, defaultPluginInputsForCreate } from '../../src/components/EntryShell';
 import { AMR_LOGIN_TIMEOUT_MS } from '../../src/components/amrLoginPolling';
 import { I18nProvider } from '../../src/i18n';
 import type { AgentInfo, AppConfig } from '../../src/types';
@@ -283,6 +283,27 @@ describe('EntryShell settings menu', () => {
     fireEvent.click(screen.getByTestId('entry-settings-open-details'));
 
     expect(props.onOpenSettings).toHaveBeenCalledWith();
+  });
+});
+
+describe('EntryShell project defaults', () => {
+  it('uses deck metadata slide count when preparing default plugin inputs', () => {
+    const inputs = defaultPluginInputsForCreate({
+      name: 'Architecture blueprint',
+      skillId: null,
+      designSystemId: null,
+      metadata: {
+        kind: 'deck',
+        slideCount: '25-30 pages',
+        speakerNotes: true,
+      },
+    } as any, 'example-simple-deck');
+
+    expect(inputs).toMatchObject({
+      topic: 'Architecture blueprint',
+      slideCount: '25-30 pages',
+      speakerNotes: 'include speaker notes',
+    });
   });
 });
 
