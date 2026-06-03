@@ -2579,6 +2579,7 @@ export const id: Dict = {
   'settings.skillsNew': 'Keterampilan baru',
   'settings.skillsEmpty': 'Pilih keterampilan di kiri, atau buat yang baru.',
   'settings.skillsEdit': 'Edit',
+  'settings.skillsCreateOverride': 'Buat override pengguna',
   'settings.skillsDelete': 'Hapus',
   'settings.skillsDeleteConfirm': 'Konfirmasi hapus',
   'settings.skillsName': 'Nama',
@@ -2587,6 +2588,9 @@ export const id: Dict = {
   'settings.skillsBody': 'Isi SKILL.md',
   'settings.skillsCreate': 'Buat',
   'settings.skillsSave': 'Simpan',
+  'settings.skillsSaveOverride': 'Simpan sebagai override pengguna',
+  'settings.skillsOverrideWarning':
+    'Mengedit keterampilan bawaan akan membuat salinan pengguna yang dapat Anda sesuaikan tanpa mengubah aslinya.',
   'settings.skillsSaving': 'Menyimpan…',
   'settings.skillsFiles': 'Berkas',
   'settings.skillsNoFiles': 'Tidak ada berkas dalam folder keterampilan ini.',

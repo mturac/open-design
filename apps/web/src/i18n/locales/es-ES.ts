@@ -2579,6 +2579,7 @@ export const esES: Dict = {
   'settings.skillsNew': 'Nueva habilidad',
   'settings.skillsEmpty': 'Selecciona una habilidad a la izquierda o crea una nueva.',
   'settings.skillsEdit': 'Editar',
+  'settings.skillsCreateOverride': 'Crear sobrescritura de usuario',
   'settings.skillsDelete': 'Eliminar',
   'settings.skillsDeleteConfirm': 'Confirmar eliminación',
   'settings.skillsName': 'Nombre',
@@ -2587,6 +2588,9 @@ export const esES: Dict = {
   'settings.skillsBody': 'Cuerpo de SKILL.md',
   'settings.skillsCreate': 'Crear',
   'settings.skillsSave': 'Guardar',
+  'settings.skillsSaveOverride': 'Guardar como sobrescritura de usuario',
+  'settings.skillsOverrideWarning':
+    'Editar una habilidad integrada creará una copia de usuario que puedes personalizar sin cambiar la original.',
   'settings.skillsSaving': 'Guardando…',
   'settings.skillsFiles': 'Archivos',
   'settings.skillsNoFiles': 'No hay archivos en esta carpeta de habilidad.',

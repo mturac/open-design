@@ -2579,6 +2579,7 @@ export const pl: Dict = {
   'settings.skillsNew': 'Nowa umiejętność',
   'settings.skillsEmpty': 'Wybierz umiejętność po lewej lub utwórz nową.',
   'settings.skillsEdit': 'Edytuj',
+  'settings.skillsCreateOverride': 'Utwórz nadpisanie użytkownika',
   'settings.skillsDelete': 'Usuń',
   'settings.skillsDeleteConfirm': 'Potwierdź usunięcie',
   'settings.skillsName': 'Nazwa',
@@ -2587,6 +2588,9 @@ export const pl: Dict = {
   'settings.skillsBody': 'Treść SKILL.md',
   'settings.skillsCreate': 'Utwórz',
   'settings.skillsSave': 'Zapisz',
+  'settings.skillsSaveOverride': 'Zapisz jako nadpisanie użytkownika',
+  'settings.skillsOverrideWarning':
+    'Edycja wbudowanej umiejętności utworzy kopię użytkownika, którą można dostosować bez zmiany oryginału.',
   'settings.skillsSaving': 'Zapisywanie…',
   'settings.skillsFiles': 'Pliki',
   'settings.skillsNoFiles': 'Brak plików w tym folderze umiejętności.',

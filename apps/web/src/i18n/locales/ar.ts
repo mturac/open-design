@@ -2579,6 +2579,7 @@ export const ar: Dict = {
   'settings.skillsNew': 'مهارة جديدة',
   'settings.skillsEmpty': 'حدد مهارة من اليسار أو أنشئ مهارة جديدة.',
   'settings.skillsEdit': 'تحرير',
+  'settings.skillsCreateOverride': 'إنشاء تجاوز للمستخدم',
   'settings.skillsDelete': 'حذف',
   'settings.skillsDeleteConfirm': 'تأكيد الحذف',
   'settings.skillsName': 'الاسم',
@@ -2587,6 +2588,9 @@ export const ar: Dict = {
   'settings.skillsBody': 'محتوى SKILL.md',
   'settings.skillsCreate': 'إنشاء',
   'settings.skillsSave': 'حفظ',
+  'settings.skillsSaveOverride': 'حفظ كتجاوز للمستخدم',
+  'settings.skillsOverrideWarning':
+    'سيؤدي تعديل مهارة مدمجة إلى إنشاء نسخة مستخدم يمكنك تخصيصها دون تغيير النسخة الأصلية.',
   'settings.skillsSaving': 'جاري الحفظ…',
   'settings.skillsFiles': 'الملفات',
   'settings.skillsNoFiles': 'لا توجد ملفات في مجلد هذه المهارة.',

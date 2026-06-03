@@ -2579,6 +2579,7 @@ export const hu: Dict = {
   'settings.skillsNew': 'Új készség',
   'settings.skillsEmpty': 'Válassz egy készséget balra, vagy hozz létre újat.',
   'settings.skillsEdit': 'Szerkesztés',
+  'settings.skillsCreateOverride': 'Felhasználói felülírás létrehozása',
   'settings.skillsDelete': 'Törlés',
   'settings.skillsDeleteConfirm': 'Törlés megerősítése',
   'settings.skillsName': 'Név',
@@ -2587,6 +2588,9 @@ export const hu: Dict = {
   'settings.skillsBody': 'SKILL.md tartalom',
   'settings.skillsCreate': 'Létrehozás',
   'settings.skillsSave': 'Mentés',
+  'settings.skillsSaveOverride': 'Mentés felhasználói felülírásként',
+  'settings.skillsOverrideWarning':
+    'A beépített készség szerkesztése felhasználói másolatot hoz létre, amelyet az eredeti módosítása nélkül testre szabhatsz.',
   'settings.skillsSaving': 'Mentés…',
   'settings.skillsFiles': 'Fájlok',
   'settings.skillsNoFiles': 'Nincs fájl ebben a készségmappában.',

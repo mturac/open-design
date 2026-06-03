@@ -2579,6 +2579,7 @@ export const uk: Dict = {
   'settings.skillsNew': 'Нова навичка',
   'settings.skillsEmpty': 'Виберіть навичку зліва або створіть нову.',
   'settings.skillsEdit': 'Редагувати',
+  'settings.skillsCreateOverride': 'Створити користувацьке перевизначення',
   'settings.skillsDelete': 'Видалити',
   'settings.skillsDeleteConfirm': 'Підтвердити видалення',
   'settings.skillsName': 'Назва',
@@ -2587,6 +2588,9 @@ export const uk: Dict = {
   'settings.skillsBody': 'Вміст SKILL.md',
   'settings.skillsCreate': 'Створити',
   'settings.skillsSave': 'Зберегти',
+  'settings.skillsSaveOverride': 'Зберегти як користувацьке перевизначення',
+  'settings.skillsOverrideWarning':
+    'Редагування вбудованої навички створить користувацьку копію, яку можна налаштувати без зміни оригіналу.',
   'settings.skillsSaving': 'Збереження…',
   'settings.skillsFiles': 'Файли',
   'settings.skillsNoFiles': 'У теці цієї навички немає файлів.',

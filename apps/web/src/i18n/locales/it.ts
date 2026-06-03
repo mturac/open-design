@@ -2579,6 +2579,7 @@ export const it: Dict = {
   'settings.skillsNew': 'Nuova competenza',
   'settings.skillsEmpty': 'Seleziona una competenza a sinistra, o creane una.',
   'settings.skillsEdit': 'Modifica',
+  'settings.skillsCreateOverride': 'Crea override utente',
   'settings.skillsDelete': 'Elimina',
   'settings.skillsDeleteConfirm': 'Conferma eliminazione',
   'settings.skillsName': 'Nome',
@@ -2587,6 +2588,9 @@ export const it: Dict = {
   'settings.skillsBody': 'Corpo SKILL.md',
   'settings.skillsCreate': 'Crea',
   'settings.skillsSave': 'Salva',
+  'settings.skillsSaveOverride': 'Salva come override utente',
+  'settings.skillsOverrideWarning':
+    'Modificare una competenza integrata creerà una copia utente che puoi personalizzare senza cambiare l\'originale.',
   'settings.skillsSaving': 'Salvataggio…',
   'settings.skillsFiles': 'File',
   'settings.skillsNoFiles': 'Nessun file in questa cartella di competenza.',

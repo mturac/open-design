@@ -2579,6 +2579,7 @@ export const th: Dict = {
   'settings.skillsNew': 'Skill ใหม่',
   'settings.skillsEmpty': 'เลือก skill ทางด้านซ้าย หรือสร้างใหม่',
   'settings.skillsEdit': 'แก้ไข',
+  'settings.skillsCreateOverride': 'สร้างการแทนที่ของผู้ใช้',
   'settings.skillsDelete': 'ลบ',
   'settings.skillsDeleteConfirm': 'ยืนยันการลบ',
   'settings.skillsName': 'ชื่อ',
@@ -2587,6 +2588,9 @@ export const th: Dict = {
   'settings.skillsBody': 'เนื้อหา SKILL.md',
   'settings.skillsCreate': 'สร้าง',
   'settings.skillsSave': 'บันทึก',
+  'settings.skillsSaveOverride': 'บันทึกเป็นการแทนที่ของผู้ใช้',
+  'settings.skillsOverrideWarning':
+    'การแก้ไขสกิลที่มีมาให้จะสร้างสำเนาของผู้ใช้ที่คุณปรับแต่งได้โดยไม่เปลี่ยนต้นฉบับ',
   'settings.skillsSaving': 'กำลังบันทึก…',
   'settings.skillsFiles': 'ไฟล์',
   'settings.skillsNoFiles': 'ไม่มีไฟล์ในโฟลเดอร์ทักษะนี้',

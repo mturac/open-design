@@ -45,7 +45,7 @@ function renderSkillsSection(
   options?: {
     onSkillsRefresh?: () => void | Promise<void>;
     onSkillsChanged?: (id?: string) => void;
-    locale?: 'en' | 'zh-CN';
+    locale?: 'de' | 'en' | 'zh-CN';
   },
 ) {
   const setCfg = vi.fn();
@@ -243,6 +243,40 @@ describe('SkillsSection', () => {
     const form = await within(row).findByTestId('skills-edit-form');
     expect(within(form).getByRole('heading', { name: '创建用户覆盖' })).toBeTruthy();
     expect(within(form).getByRole('button', { name: '保存为用户覆盖' })).toBeTruthy();
+    expect(within(row).queryByText('Create user override')).toBeNull();
+    expect(within(row).queryByText('Save as user override')).toBeNull();
+  });
+
+  it('does not fall back to English for built-in override labels in other locales', async () => {
+    renderSkillsSection(
+      [
+        makeSkill({
+          id: 'builtin-skill',
+          name: 'Built-in skill',
+          source: 'built-in',
+        }),
+      ],
+      { locale: 'de' },
+    );
+
+    const row = await screen.findByTestId('skill-row-builtin-skill');
+    expect(within(row).getByTitle('Benutzer-Override erstellen')).toBeTruthy();
+    fireEvent.click(within(row).getByTestId('skills-edit'));
+
+    const warning = await within(row).findByTestId('skills-edit-builtin-warning');
+    expect(warning.textContent).toContain('Benutzerkopie');
+    expect(
+      within(warning).getByRole('button', { name: 'Benutzer-Override erstellen' }),
+    ).toBeTruthy();
+
+    fireEvent.click(await within(row).findByTestId('skills-edit-builtin-confirm'));
+    const form = await within(row).findByTestId('skills-edit-form');
+    expect(
+      within(form).getByRole('heading', { name: 'Benutzer-Override erstellen' }),
+    ).toBeTruthy();
+    expect(
+      within(form).getByRole('button', { name: 'Als Benutzer-Override speichern' }),
+    ).toBeTruthy();
     expect(within(row).queryByText('Create user override')).toBeNull();
     expect(within(row).queryByText('Save as user override')).toBeNull();
   });

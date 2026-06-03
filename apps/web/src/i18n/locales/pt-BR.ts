@@ -2579,6 +2579,7 @@ export const ptBR: Dict = {
   'settings.skillsNew': 'Nova habilidade',
   'settings.skillsEmpty': 'Selecione uma habilidade à esquerda ou crie uma nova.',
   'settings.skillsEdit': 'Editar',
+  'settings.skillsCreateOverride': 'Criar substituição do usuário',
   'settings.skillsDelete': 'Excluir',
   'settings.skillsDeleteConfirm': 'Confirmar exclusão',
   'settings.skillsName': 'Nome',
@@ -2587,6 +2588,9 @@ export const ptBR: Dict = {
   'settings.skillsBody': 'Corpo do SKILL.md',
   'settings.skillsCreate': 'Criar',
   'settings.skillsSave': 'Salvar',
+  'settings.skillsSaveOverride': 'Salvar como substituição do usuário',
+  'settings.skillsOverrideWarning':
+    'Editar uma habilidade integrada criará uma cópia do usuário que você pode personalizar sem alterar a original.',
   'settings.skillsSaving': 'Salvando…',
   'settings.skillsFiles': 'Arquivos',
   'settings.skillsNoFiles': 'Nenhum arquivo nesta pasta de habilidade.',

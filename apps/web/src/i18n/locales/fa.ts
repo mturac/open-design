@@ -2579,6 +2579,7 @@ export const fa: Dict = {
   'settings.skillsNew': 'مهارت جدید',
   'settings.skillsEmpty': 'یک مهارت را از سمت چپ انتخاب کنید یا یکی بسازید.',
   'settings.skillsEdit': 'ویرایش',
+  'settings.skillsCreateOverride': 'ایجاد بازنویسی کاربر',
   'settings.skillsDelete': 'حذف',
   'settings.skillsDeleteConfirm': 'تأیید حذف',
   'settings.skillsName': 'نام',
@@ -2587,6 +2588,9 @@ export const fa: Dict = {
   'settings.skillsBody': 'متن SKILL.md',
   'settings.skillsCreate': 'ایجاد',
   'settings.skillsSave': 'ذخیره',
+  'settings.skillsSaveOverride': 'ذخیره به‌عنوان بازنویسی کاربر',
+  'settings.skillsOverrideWarning':
+    'ویرایش یک مهارت داخلی، یک نسخه کاربری می‌سازد که می‌توانید بدون تغییر نسخه اصلی سفارشی کنید.',
   'settings.skillsSaving': 'در حال ذخیره…',
   'settings.skillsFiles': 'فایل‌ها',
   'settings.skillsNoFiles': 'هیچ فایلی در این پوشه مهارت نیست.',

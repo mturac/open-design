@@ -2587,6 +2587,10 @@ export const ja: Dict = {
   'settings.skillsBody': 'SKILL.md 本文',
   'settings.skillsCreate': '作成',
   'settings.skillsSave': '保存',
+  'settings.skillsCreateOverride': 'ユーザー上書きを作成',
+  'settings.skillsSaveOverride': 'ユーザー上書きとして保存',
+  'settings.skillsOverrideWarning':
+    '組み込みスキルを編集すると、元のスキルを変更せずにカスタマイズできるユーザーコピーが作成されます。',
   'settings.skillsSaving': '保存中…',
   'settings.skillsFiles': 'ファイル',
   'settings.skillsNoFiles': 'このスキルフォルダーにファイルはありません。',

@@ -2579,6 +2579,7 @@ export const ru: Dict = {
   'settings.skillsNew': 'Новый навык',
   'settings.skillsEmpty': 'Выберите навык слева или создайте новый.',
   'settings.skillsEdit': 'Изменить',
+  'settings.skillsCreateOverride': 'Создать пользовательское переопределение',
   'settings.skillsDelete': 'Удалить',
   'settings.skillsDeleteConfirm': 'Подтвердить удаление',
   'settings.skillsName': 'Имя',
@@ -2587,6 +2588,9 @@ export const ru: Dict = {
   'settings.skillsBody': 'Содержимое SKILL.md',
   'settings.skillsCreate': 'Создать',
   'settings.skillsSave': 'Сохранить',
+  'settings.skillsSaveOverride': 'Сохранить как пользовательское переопределение',
+  'settings.skillsOverrideWarning':
+    'Редактирование встроенного навыка создаст пользовательскую копию, которую можно настроить без изменения оригинала.',
   'settings.skillsSaving': 'Сохранение…',
   'settings.skillsFiles': 'Файлы',
   'settings.skillsNoFiles': 'В папке этого навыка нет файлов.',

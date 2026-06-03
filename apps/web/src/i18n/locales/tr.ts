@@ -2579,6 +2579,7 @@ export const tr: Dict = {
   'settings.skillsNew': 'Yeni yetenek',
   'settings.skillsEmpty': 'Soldan bir yetenek seçin veya yeni bir yetenek oluşturun.',
   'settings.skillsEdit': 'Düzenle',
+  'settings.skillsCreateOverride': 'Kullanıcı geçersiz kılması oluştur',
   'settings.skillsDelete': 'Sil',
   'settings.skillsDeleteConfirm': 'Silmeyi onayla',
   'settings.skillsName': 'Ad',
@@ -2587,6 +2588,9 @@ export const tr: Dict = {
   'settings.skillsBody': 'SKILL.md gövdesi',
   'settings.skillsCreate': 'Oluştur',
   'settings.skillsSave': 'Kaydet',
+  'settings.skillsSaveOverride': 'Kullanıcı geçersiz kılması olarak kaydet',
+  'settings.skillsOverrideWarning':
+    'Yerleşik bir yeteneği düzenlemek, özgünü değiştirmeden özelleştirebileceğiniz bir kullanıcı kopyası oluşturur.',
   'settings.skillsSaving': 'Kaydediliyor…',
   'settings.skillsFiles': 'Dosyalar',
   'settings.skillsNoFiles': 'Bu yetenek klasöründe dosya yok.',

@@ -2579,6 +2579,7 @@ export const fr: Dict = {
   'settings.skillsNew': 'Nouvelle compétence',
   'settings.skillsEmpty': 'Sélectionnez une compétence à gauche, ou créez-en une.',
   'settings.skillsEdit': 'Modifier',
+  'settings.skillsCreateOverride': 'Créer une surcharge utilisateur',
   'settings.skillsDelete': 'Supprimer',
   'settings.skillsDeleteConfirm': 'Confirmer la suppression',
   'settings.skillsName': 'Nom',
@@ -2587,6 +2588,9 @@ export const fr: Dict = {
   'settings.skillsBody': 'Corps SKILL.md',
   'settings.skillsCreate': 'Créer',
   'settings.skillsSave': 'Enregistrer',
+  'settings.skillsSaveOverride': 'Enregistrer comme surcharge utilisateur',
+  'settings.skillsOverrideWarning':
+    'Modifier une compétence intégrée créera une copie utilisateur que vous pourrez personnaliser sans changer l’original.',
   'settings.skillsSaving': 'Enregistrement…',
   'settings.skillsFiles': 'Fichiers',
   'settings.skillsNoFiles': 'Aucun fichier dans ce dossier de compétence.',

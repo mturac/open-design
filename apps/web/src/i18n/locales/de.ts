@@ -2579,6 +2579,7 @@ export const de: Dict = {
   'settings.skillsNew': 'Neuer Skill',
   'settings.skillsEmpty': 'Wähle links einen Skill aus oder erstelle einen neuen.',
   'settings.skillsEdit': 'Bearbeiten',
+  'settings.skillsCreateOverride': 'Benutzer-Override erstellen',
   'settings.skillsDelete': 'Löschen',
   'settings.skillsDeleteConfirm': 'Löschen bestätigen',
   'settings.skillsName': 'Name',
@@ -2587,6 +2588,9 @@ export const de: Dict = {
   'settings.skillsBody': 'SKILL.md-Inhalt',
   'settings.skillsCreate': 'Erstellen',
   'settings.skillsSave': 'Speichern',
+  'settings.skillsSaveOverride': 'Als Benutzer-Override speichern',
+  'settings.skillsOverrideWarning':
+    'Beim Bearbeiten eines integrierten Skills wird eine Benutzerkopie erstellt, die du anpassen kannst, ohne den ursprünglichen Skill zu ändern.',
   'settings.skillsSaving': 'Speichern…',
   'settings.skillsFiles': 'Dateien',
   'settings.skillsNoFiles': 'Keine Dateien in diesem Skill-Ordner.',
