@@ -2579,6 +2579,7 @@ export const zhTW: Dict = {
   'settings.skillsNew': '新增技能',
   'settings.skillsEmpty': '請於左側選擇一個技能，或新增一個。',
   'settings.skillsEdit': '編輯',
+  'settings.skillsCreateOverride': '建立使用者覆寫',
   'settings.skillsDelete': '刪除',
   'settings.skillsDeleteConfirm': '確認刪除',
   'settings.skillsName': '名稱',
@@ -2587,6 +2588,9 @@ export const zhTW: Dict = {
   'settings.skillsBody': 'SKILL.md 內容',
   'settings.skillsCreate': '建立',
   'settings.skillsSave': '儲存',
+  'settings.skillsSaveOverride': '儲存為使用者覆寫',
+  'settings.skillsOverrideWarning':
+    '編輯此內建技能會建立一個使用者覆寫。在刪除該覆寫前，內建項目會從列表中隱藏。是否繼續？',
   'settings.skillsSaving': '儲存中…',
   'settings.skillsFiles': '檔案',
   'settings.skillsNoFiles': '此技能資料夾沒有檔案。',

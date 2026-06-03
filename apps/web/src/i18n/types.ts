@@ -424,6 +424,7 @@ export interface Dict {
   'settings.skillsNew': string;
   'settings.skillsEmpty': string;
   'settings.skillsEdit': string;
+  'settings.skillsCreateOverride': string;
   'settings.skillsDelete': string;
   'settings.skillsDeleteConfirm': string;
   'settings.skillsName': string;
@@ -432,6 +433,8 @@ export interface Dict {
   'settings.skillsBody': string;
   'settings.skillsCreate': string;
   'settings.skillsSave': string;
+  'settings.skillsSaveOverride': string;
+  'settings.skillsOverrideWarning': string;
   'settings.skillsSaving': string;
   'settings.skillsFiles': string;
   'settings.skillsNoFiles': string;

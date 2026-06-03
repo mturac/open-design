@@ -2579,6 +2579,7 @@ export const zhCN: Dict = {
   'settings.skillsNew': '新建技能',
   'settings.skillsEmpty': '请在左侧选择一个技能，或新建一个。',
   'settings.skillsEdit': '编辑',
+  'settings.skillsCreateOverride': '创建用户覆盖',
   'settings.skillsDelete': '删除',
   'settings.skillsDeleteConfirm': '确认删除',
   'settings.skillsName': '名称',
@@ -2587,6 +2588,9 @@ export const zhCN: Dict = {
   'settings.skillsBody': 'SKILL.md 内容',
   'settings.skillsCreate': '创建',
   'settings.skillsSave': '保存',
+  'settings.skillsSaveOverride': '保存为用户覆盖',
+  'settings.skillsOverrideWarning':
+    '编辑此内置技能会创建一个用户覆盖。在删除该覆盖前，内置条目会从列表中隐藏。是否继续？',
   'settings.skillsSaving': '保存中…',
   'settings.skillsFiles': '文件',
   'settings.skillsNoFiles': '该技能目录下暂无文件。',

@@ -43,9 +43,9 @@ function makeSkill(overrides: Partial<SkillSummary>): SkillSummary {
 function renderSkillsSection(
   skills: SkillSummary[],
   options?: {
-    locale?: 'en' | 'zh-CN';
     onSkillsRefresh?: () => void | Promise<void>;
     onSkillsChanged?: (id?: string) => void;
+    locale?: 'en' | 'zh-CN';
   },
 ) {
   const setCfg = vi.fn();
@@ -122,10 +122,13 @@ function renderSkillsSection(
       onSkillsChanged={onSkillsChanged}
     />
   );
+
   render(
     options?.locale ? (
       <I18nProvider initial={options.locale}>{section}</I18nProvider>
-    ) : section,
+    ) : (
+      section
+    ),
   );
   return {
     fetchMock: globalThis.fetch as ReturnType<typeof vi.fn>,
@@ -214,6 +217,34 @@ describe('SkillsSection', () => {
     expect(
       within(form).getByRole('button', { name: 'Save as user override' }),
     ).toBeTruthy();
+  });
+
+  it('localizes built-in override edit labels', async () => {
+    renderSkillsSection(
+      [
+        makeSkill({
+          id: 'builtin-skill',
+          name: 'Built-in skill',
+          source: 'built-in',
+        }),
+      ],
+      { locale: 'zh-CN' },
+    );
+
+    const row = await screen.findByTestId('skill-row-builtin-skill');
+    expect(within(row).getByTitle('创建用户覆盖')).toBeTruthy();
+    fireEvent.click(within(row).getByTestId('skills-edit'));
+
+    const warning = await within(row).findByTestId('skills-edit-builtin-warning');
+    expect(warning.textContent).toContain('用户覆盖');
+    expect(within(warning).getByRole('button', { name: '创建用户覆盖' })).toBeTruthy();
+
+    fireEvent.click(await within(row).findByTestId('skills-edit-builtin-confirm'));
+    const form = await within(row).findByTestId('skills-edit-form');
+    expect(within(form).getByRole('heading', { name: '创建用户覆盖' })).toBeTruthy();
+    expect(within(form).getByRole('button', { name: '保存为用户覆盖' })).toBeTruthy();
+    expect(within(row).queryByText('Create user override')).toBeNull();
+    expect(within(row).queryByText('Save as user override')).toBeNull();
   });
 
   it('skips the override warning when editing a user skill', async () => {

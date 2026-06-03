@@ -2579,6 +2579,7 @@ export const en: Dict = {
   'settings.skillsNew': 'New skill',
   'settings.skillsEmpty': 'Select a skill on the left, or create a new one.',
   'settings.skillsEdit': 'Edit',
+  'settings.skillsCreateOverride': 'Create user override',
   'settings.skillsDelete': 'Delete',
   'settings.skillsDeleteConfirm': 'Confirm delete',
   'settings.skillsName': 'Name',
@@ -2587,6 +2588,9 @@ export const en: Dict = {
   'settings.skillsBody': 'SKILL.md body',
   'settings.skillsCreate': 'Create',
   'settings.skillsSave': 'Save',
+  'settings.skillsSaveOverride': 'Save as user override',
+  'settings.skillsOverrideWarning':
+    'Editing this built-in skill creates a user override. The built-in entry will be hidden from the list until you delete the override. Continue?',
   'settings.skillsSaving': 'Saving…',
   'settings.skillsFiles': 'Files',
   'settings.skillsNoFiles': 'No files in this skill folder.',

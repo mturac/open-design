@@ -578,9 +578,9 @@ function SkillRow({
   const t = useT();
   const { locale } = useI18n();
   const editActionLabel =
-    skill.source === 'built-in' ? 'Create user override' : t('settings.skillsEdit');
+    skill.source === 'built-in' ? t('settings.skillsCreateOverride') : t('settings.skillsEdit');
   const saveActionLabel =
-    skill.source === 'built-in' ? 'Save as user override' : t('settings.skillsSave');
+    skill.source === 'built-in' ? t('settings.skillsSaveOverride') : t('settings.skillsSave');
   const summaryName = localizeSkillName(locale, skill) || skill.id;
   const summaryDescription = localizeSkillDescription(locale, skill);
   const canDelete = skill.source === 'user';
@@ -693,11 +693,7 @@ function SkillRow({
           role="alert"
           data-testid="skills-edit-builtin-warning"
         >
-          <p>
-            Editing this built-in skill creates a user override. The built-in
-            entry will be hidden from the list until you delete the override.
-            Continue?
-          </p>
+          <p>{t('settings.skillsOverrideWarning')}</p>
           <div className="skills-edit-builtin-actions">
             <button
               type="button"
