@@ -86,15 +86,18 @@ function readChangelog() {
   return { lines: truncated ? all.slice(0, MAX_CHANGELOG_LINES) : all, truncated, total: all.length };
 }
 
-// Turn the plain-text `git log` line into clickable Feishu links: every PR
-// reference (`#1234`, typically the `(#1234)` suffix a squash-merge leaves on
-// the subject) jumps to the pull request, and the trailing short hash appended
-// by `git log %s (%h)` jumps to the commit. Lines without a PR ref (direct
-// pushes to the release branch) still get their commit linked.
+// Turn the plain-text `git log` line into clickable Feishu links: the trailing
+// PR suffix a squash-merge leaves on the subject (`(#1234)`) jumps to the pull
+// request, and the trailing short hash appended by `git log %s (%h)` jumps to
+// the commit. Lines without a PR suffix (direct pushes to the release branch)
+// still get their commit linked.
 function linkifyChangelogLine(line) {
   if (repo.length === 0) return line;
   return line
-    .replace(/#(\d+)/g, (_match, num) => `[#${num}](https://github.com/${repo}/pull/${num})`)
+    .replace(
+      /\(#(\d+)\)(?=\s*\([0-9a-f]{7,40}\)\s*$)/i,
+      (_match, num) => `([#${num}](https://github.com/${repo}/pull/${num}))`,
+    )
     .replace(/\(([0-9a-f]{7,40})\)\s*$/i, (_match, hash) => `([\`${hash}\`](https://github.com/${repo}/commit/${hash}))`);
 }
 
