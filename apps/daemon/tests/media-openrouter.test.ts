@@ -490,18 +490,8 @@ describe('openrouter video generation', () => {
   it('timeout error message includes the ceiling in seconds', async () => {
     // Set a very short ceiling (minimum 60s) so the timeout fires quickly.
     process.env.OD_OPENROUTER_VIDEO_MAX_POLL_MS = '60000';
-
-    // Make the poll loop deterministic: setTimeout resolves immediately
-    // but Date.now() tracks accumulated sleep time so the ceiling check
-    // fires after ~8 fast iterations instead of 60+ real seconds.
-    const origSetTimeout = globalThis.setTimeout;
-    const baseTime = Date.now();
-    let elapsed = 0;
-    vi.stubGlobal('setTimeout', (fn: TimerHandler, delay?: number, ...args: unknown[]) => {
-      elapsed += (delay || 0);
-      return origSetTimeout(fn, 1, ...args);
-    });
-    vi.spyOn(Date, 'now').mockImplementation(() => baseTime + elapsed);
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
 
     // Mock: submit succeeds, then polls always return 'in_progress'
     // so the loop times out. Use mockImplementation to create a fresh
@@ -523,13 +513,17 @@ describe('openrouter video generation', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(generateMedia(argsWithPaths())).rejects.toThrow(
-      /ceiling 60s/,
-    );
-
-    vi.restoreAllMocks();
-    globalThis.setTimeout = origSetTimeout;
-    delete process.env.OD_OPENROUTER_VIDEO_MAX_POLL_MS;
+    try {
+      const pending = expect(generateMedia(argsWithPaths())).rejects.toThrow(
+        /ceiling 60s/,
+      );
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(70_000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+      delete process.env.OD_OPENROUTER_VIDEO_MAX_POLL_MS;
+    }
   });
 });
 
