@@ -24,10 +24,10 @@ import { useAnalytics } from '../analytics/provider';
 import { trackAutomationsClick, trackPageView } from '../analytics/events';
 import {
   NewAutomationModal,
-  describeScheduleSummary,
   type AutomationTemplate,
   type AutomationTemplateKind,
 } from './NewAutomationModal';
+import { describeRoutineSchedule } from './routineScheduleLabels';
 
 type ProjectSummary = { id: string; name: string };
 type TemplateFilter =
@@ -170,7 +170,7 @@ function templateFilters(t: TranslateFn): ReadonlyArray<{ id: TemplateFilter; la
 
 function scheduleStatusLabel(routine: Routine, t: TranslateFn): string {
   if (!routine.enabled) return t('automations.scheduleStatusPaused');
-  return describeScheduleSummary(routine.schedule);
+  return describeRoutineSchedule(routine.schedule, t, routine.nextRunAt);
 }
 
 function nextRunLabel(routine: Routine, t: TranslateFn): string {

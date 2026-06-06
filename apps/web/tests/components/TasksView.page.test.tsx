@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Routine } from '@open-design/contracts';
 
 import { TasksView } from '../../src/components/TasksView';
+import { I18nProvider } from '../../src/i18n';
 import * as router from '../../src/router';
 
 const originalFetch = globalThis.fetch;
@@ -122,6 +123,37 @@ describe('TasksView page shell', () => {
       expect(summary.textContent ?? '').toContain('8');
       expect(summary.textContent ?? '').toContain('Templates');
     });
+  });
+
+  it('keeps scheduled routine summaries formatted after localization', async () => {
+    const routines: Routine[] = [
+      {
+        id: 'routine-localized-summary',
+        name: 'Morning digest',
+        prompt: 'Summarize project activity.',
+        schedule: { kind: 'daily', time: '09:00', timezone: 'America/New_York' },
+        target: { mode: 'create_each_run' },
+        skillId: null,
+        agentId: null,
+        enabled: true,
+        nextRunAt: null,
+        lastRun: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
+    mockTasksViewFetch({ routines });
+
+    render(
+      <I18nProvider initial="zh-CN">
+        <TasksView />
+      </I18nProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('每天 9:00 上午（New York）运行')).toBeTruthy();
+    });
+    expect(screen.queryByText('Daily at 9:00 AM · New York')).toBeNull();
   });
 
   it('shows the empty state and opens the create modal from it', async () => {

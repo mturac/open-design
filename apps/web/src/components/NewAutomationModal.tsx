@@ -17,6 +17,7 @@ import type {
 } from '@open-design/contracts';
 
 import { Icon, type IconName } from './Icon';
+import { describeRoutineSchedule } from './routineScheduleLabels';
 import type { SkillSummary } from '../types';
 import { listPlugins } from '../state/projects';
 import { fetchMcpServers, type McpServerConfig } from '../state/mcp';
@@ -513,8 +514,8 @@ export function NewAutomationModal({
 
   const projectName = projects.find((p) => p.id === form.projectId)?.name ?? null;
   const projectLabel =
-    form.mode === 'reuse' && projectName ? projectName : 'New project each run';
-  const scheduleLabel = describeScheduleSummary(buildSchedule(form));
+    form.mode === 'reuse' && projectName ? projectName : t('automations.targetNewEachRun');
+  const scheduleLabel = describeRoutineSchedule(buildSchedule(form), t);
   const scheduleLabelNode = buildScheduleSummaryNode(buildSchedule(form));
   const mentionQueryNorm = (mention?.query ?? '').trim().toLowerCase();
   const filteredSkills = filterCapabilities(
