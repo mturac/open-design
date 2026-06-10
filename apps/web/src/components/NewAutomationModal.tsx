@@ -615,7 +615,7 @@ export function NewAutomationModal({
                 onClick={() => setPopover((p) => (p === 'template' ? null : 'template'))}
               >
                 <Icon name="sparkles" size={13} />
-                <span>{selectedTemplate?.defaultName ?? selectedTemplate?.title ?? t('automations.useTemplate')}</span>
+                <span>{selectedTemplate?.title ?? selectedTemplate?.defaultName ?? t('automations.useTemplate')}</span>
                 <Icon name="chevron-down" size={11} />
               </button>
               {popover === 'template' ? (
