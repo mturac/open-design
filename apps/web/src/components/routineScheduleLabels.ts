@@ -40,7 +40,9 @@ function tzCityLabel(timezone: string): string {
 
 function scheduleTimezoneLabel(timezone: string, nextRunAt?: number | null): string {
   if (nextRunAt) {
-    return `${tzCityLabel(timezone)} (${gmtLabel(timezone, new Date(nextRunAt)})`;
+    const cityLabel = tzCityLabel(timezone);
+    const gmt = gmtLabel(timezone, new Date(nextRunAt));
+    return `${cityLabel} (${gmt})`;
   }
   return tzCityLabel(timezone);
 }
