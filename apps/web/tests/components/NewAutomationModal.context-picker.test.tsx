@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectorDetail, InstalledPluginRecord } from '@open-design/contracts';
 
 import { NewAutomationModal } from '../../src/components/NewAutomationModal';
+import type { AutomationTemplate } from '../../src/components/NewAutomationModal';
 import type { SkillSummary } from '../../src/types';
 import { listPlugins } from '../../src/state/projects';
 import { fetchMcpServers } from '../../src/state/mcp';
@@ -77,6 +78,17 @@ afterEach(() => {
 });
 
 describe('NewAutomationModal context picker', () => {
+  const templateWithLocalizedTitle: AutomationTemplate = {
+    id: 'memory-refresh-template',
+    category: 'memory',
+    kind: 'routine',
+    icon: 'history',
+    title: 'Refresh project memory from recent work.',
+    description: 'Use recent changes to refresh your memory index.',
+    defaultName: 'Memory refresh',
+    prompt: 'Use Automation template "memory-refresh-template".',
+  };
+
   it('picks skills, plugins, MCP servers, and connectors from @ in the prompt', async () => {
     vi.mocked(listPlugins).mockResolvedValue([plugin]);
     vi.mocked(fetchMcpServers).mockResolvedValue({ servers: [mcpServer], templates: [] });
@@ -130,5 +142,28 @@ describe('NewAutomationModal context picker', () => {
     expect(screen.getByTitle('Remove Release Plugin')).toBeTruthy();
     expect(screen.getByTitle('Remove Figma MCP')).toBeTruthy();
     expect(screen.getByTitle('Remove Linear')).toBeTruthy();
+  });
+
+  it('uses template title for picker visibility but seeds default name on selection', () => {
+    render(
+      <NewAutomationModal
+        open
+        templates={[templateWithLocalizedTitle]}
+        projects={[]}
+        skills={[]}
+        connectors={[]}
+        onClose={() => undefined}
+        onSaved={() => undefined}
+      />,
+    );
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: 'Use template' }));
+    fireEvent.mouseDown(
+      screen.getByRole('button', { name: 'Refresh project memory from recent work.' }),
+    );
+
+    expect(screen.getByRole('button', { name: 'Use template' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Memory refresh' })).toBeTruthy();
+    expect((screen.getByTestId('automation-modal-title') as HTMLInputElement).value).toBe('Memory refresh');
   });
 });
