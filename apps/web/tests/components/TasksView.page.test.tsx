@@ -4,8 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Routine } from '@open-design/contracts';
 
-import { TasksView } from '../../src/components/TasksView';
 import { I18nProvider } from '../../src/i18n';
+import { TasksView } from '../../src/components/TasksView';
 import * as router from '../../src/router';
 
 const originalFetch = globalThis.fetch;
@@ -125,12 +125,34 @@ describe('TasksView page shell', () => {
     });
   });
 
+  it('localizes the automation page chrome in Chinese', async () => {
+    mockTasksViewFetch();
+
+    render(
+      <I18nProvider initial="zh-CN">
+        <TasksView />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole('heading', { name: '自动化' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /新建自动化/ })).toBeTruthy();
+    expect(screen.getByLabelText('你的自动化')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /还没有自动化/ })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '模板' })).toBeTruthy();
+    expect(screen.getByRole('tablist', { name: '模板筛选器' })).toBeTruthy();
+
+    expect(screen.queryByText('Automations')).toBeNull();
+    expect(screen.queryByText('New automation')).toBeNull();
+    expect(screen.queryByText('No automations yet')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Templates' })).toBeNull();
+  });
+
   it('keeps scheduled routine summaries formatted after localization', async () => {
     const routines: Routine[] = [
       {
-        id: 'routine-localized-summary',
-        name: 'Morning digest',
-        prompt: 'Summarize project activity.',
+        id: 'routine-new-york',
+        name: 'Daily market digest',
+        prompt: 'Summarize the day.',
         schedule: { kind: 'daily', time: '09:00', timezone: 'America/New_York' },
         target: { mode: 'create_each_run' },
         skillId: null,
@@ -144,16 +166,10 @@ describe('TasksView page shell', () => {
     ];
     mockTasksViewFetch({ routines });
 
-    render(
-      <I18nProvider initial="zh-CN">
-        <TasksView />
-      </I18nProvider>,
-    );
+    render(<TasksView />);
 
-    await waitFor(() => {
-      expect(screen.getByText('每天 9:00 上午（New York）运行')).toBeTruthy();
-    });
-    expect(screen.queryByText('Daily at 9:00 AM · New York')).toBeNull();
+    expect(await screen.findByText('Runs daily at 9:00 AM New York')).toBeTruthy();
+    expect(screen.queryByText(/09:00 America\/New_York/)).toBeNull();
   });
 
   it('shows the empty state and opens the create modal from it', async () => {
@@ -167,7 +183,7 @@ describe('TasksView page shell', () => {
     fireEvent.click(emptyState);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Automation title')).toBeTruthy();
+      expect(screen.getByTestId('automation-modal-title')).toBeTruthy();
     });
   });
 
@@ -179,8 +195,57 @@ describe('TasksView page shell', () => {
     fireEvent.click(await screen.findByTestId('automations-new'));
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Automation title')).toBeTruthy();
+      expect(screen.getByTestId('automation-modal-title')).toBeTruthy();
     });
+  });
+
+  it('localizes the create modal opened from the Chinese page shell', async () => {
+    mockTasksViewFetch();
+
+    render(
+      <I18nProvider initial="zh-CN">
+        <TasksView />
+      </I18nProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /新建自动化/ }));
+
+    const modal = await screen.findByTestId('automation-modal');
+    expect(modal.getAttribute('aria-label')).toBe('新建自动化');
+    expect((screen.getByTestId('automation-modal-title') as HTMLInputElement).placeholder).toBe(
+      '晨间简报',
+    );
+    expect(screen.getByRole('button', { name: '使用模板' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '关闭' })).toBeTruthy();
+    expect((screen.getByTestId('automation-modal-prompt') as HTMLTextAreaElement).placeholder).toBe(
+      '告诉代理按此计划运行什么，或用 @ 提及上下文...',
+    );
+
+    fireEvent.change(screen.getByTestId('automation-modal-prompt'), {
+      target: { value: '@', selectionStart: 1 },
+    });
+    const mentionPicker = await screen.findByTestId('automation-mention-popover');
+    expect(mentionPicker.getAttribute('aria-label')).toBe('上下文搜索结果');
+    expect(within(mentionPicker).getByRole('tab', { name: '全部' })).toBeTruthy();
+    expect(within(mentionPicker).getByText('搜索设计文件、标签页、插件、技能、MCP 服务器和连接器。')).toBeTruthy();
+    expect(screen.getByLabelText(/每天/)).toBeTruthy();
+    expect(screen.queryByText('Hourly')).toBeNull();
+    expect(screen.queryByText('Daily')).toBeNull();
+    expect(screen.queryByText('Weekdays')).toBeNull();
+    expect(screen.queryByText('Weekly')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '每次运行新建项目' }));
+    expect(screen.getByText('每次触发都使用一个全新且隔离的工作区。')).toBeTruthy();
+
+    expect(screen.queryByLabelText('New automation')).toBeNull();
+    expect(screen.queryByPlaceholderText('Automation title')).toBeNull();
+    expect(screen.queryByPlaceholderText('Ask the agent what to run on this schedule, or @mention context...')).toBeNull();
+    expect(screen.queryByPlaceholderText('拉取昨天的 GitHub 与 Linear 活动并总结有哪些变化。')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Use template' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Close (Esc)' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'All' })).toBeNull();
+    expect(screen.queryByText('Search skills, plugins, MCP servers, and connectors.')).toBeNull();
+    expect(screen.queryByText('Each run starts a fresh project and conversation.')).toBeNull();
   });
 
   it('shows the template empty state when switching to an empty category', async () => {
@@ -593,7 +658,7 @@ describe('TasksView page shell', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Edit' }));
 
     await waitFor(() => {
-      expect((screen.getByLabelText('Automation title') as HTMLInputElement).value).toBe(
+      expect((screen.getByTestId('automation-modal-title') as HTMLInputElement).value).toBe(
         'Orbit digest',
       );
     });

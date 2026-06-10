@@ -4,6 +4,11 @@ import type { Dict } from '../i18n/types';
 
 type TranslateFn = (key: keyof Dict, vars?: Record<string, string | number>) => string;
 
+export type RoutineScheduleSummaryParts =
+  | { kind: 'hourly'; kindLabel: string; minute: string }
+  | { kind: 'daily' | 'weekdays'; kindLabel: string; time: string; tz: string }
+  | { kind: 'weekly'; dayLabel: string; time: string; tz: string };
+
 function formatTime12h(time: string, t: TranslateFn): string {
   const m = /^(\d{2}):(\d{2})$/.exec(time);
   if (!m) return time;
@@ -34,8 +39,52 @@ function tzCityLabel(timezone: string): string {
 }
 
 function scheduleTimezoneLabel(timezone: string, nextRunAt?: number | null): string {
-  if (nextRunAt) return gmtLabel(timezone, new Date(nextRunAt));
+  if (nextRunAt) {
+    return `${tzCityLabel(timezone)} (${gmtLabel(timezone, new Date(nextRunAt)})`;
+  }
   return tzCityLabel(timezone);
+}
+
+export function describeRoutineScheduleParts(
+  schedule: RoutineSchedule,
+  t: TranslateFn,
+  nextRunAt?: number | null,
+): RoutineScheduleSummaryParts {
+  if (schedule.kind === 'hourly') {
+    return {
+      kind: 'hourly',
+      kindLabel: t('routines.kind.hourly'),
+      minute: String(schedule.minute).padStart(2, '0'),
+    };
+  }
+
+  const time = formatTime12h(schedule.time, t);
+  const tz = scheduleTimezoneLabel(schedule.timezone, nextRunAt);
+
+  if (schedule.kind === 'daily') {
+    return {
+      kind: 'daily',
+      kindLabel: t('routines.kind.daily'),
+      time,
+      tz,
+    };
+  }
+
+  if (schedule.kind === 'weekdays') {
+    return {
+      kind: 'weekdays',
+      kindLabel: t('routines.kind.weekdays'),
+      time,
+      tz,
+    };
+  }
+
+  return {
+    kind: 'weekly',
+    dayLabel: t(`routines.weekday.long.${schedule.weekday}` as keyof Dict),
+    time,
+    tz,
+  };
 }
 
 export function describeRoutineSchedule(
