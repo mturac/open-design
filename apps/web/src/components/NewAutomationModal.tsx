@@ -357,7 +357,7 @@ export function NewAutomationModal({
   function applyTemplate(template: AutomationTemplate, options: { closePopover: boolean }) {
     setForm({
       ...emptyForm(),
-      name: template.defaultName ?? template.title,
+      name: template.title ?? template.defaultName,
       prompt: template.prompt,
     });
     setSelectedTemplateId(template.id);
@@ -912,7 +912,7 @@ function TemplatePopover({
             <Icon name={template.icon} size={14} />
           </span>
           <span className="automation-template-option__body">
-            <span className="automation-template-option__title">{template.defaultName ?? template.title}</span>
+            <span className="automation-template-option__title">{template.title ?? template.defaultName}</span>
             <span className="automation-template-option__meta">{kindLabel(template.kind)}</span>
           </span>
           {selectedId === template.id ? <Icon name="check" size={13} /> : null}
