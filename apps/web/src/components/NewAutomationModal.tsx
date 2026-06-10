@@ -64,8 +64,9 @@ function weekdayLongLabel(day: Weekday, t: TranslateFn): string {
 function describeScheduleSummaryNode(
   schedule: RoutineSchedule,
   t: TranslateFn,
+  nextRunAt?: number | null,
 ): ReactNode {
-  const parts = describeRoutineScheduleParts(schedule, t);
+  const parts = describeRoutineScheduleParts(schedule, t, nextRunAt);
   if (parts.kind === 'hourly') {
     return (
       <span className="automation-pill__segments">
@@ -498,11 +499,12 @@ export function NewAutomationModal({
   };
 
   const projectName = projects.find((p) => p.id === form.projectId)?.name ?? null;
+  const routineNextRunAt = initial?.routine?.nextRunAt ?? null;
   const projectLabel =
     form.mode === 'reuse' && projectName ? projectName : t('automations.targetCreateEachRun');
   const schedule = buildSchedule(form);
-  const scheduleLabel = describeRoutineSchedule(schedule, t);
-  const scheduleLabelNode = describeScheduleSummaryNode(schedule, t);
+  const scheduleLabel = describeRoutineSchedule(schedule, t, routineNextRunAt);
+  const scheduleLabelNode = describeScheduleSummaryNode(schedule, t, routineNextRunAt);
   const mentionQueryNorm = (mention?.query ?? '').trim().toLowerCase();
   const filteredSkills = filterCapabilities(
     skills,
