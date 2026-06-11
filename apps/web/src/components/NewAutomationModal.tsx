@@ -357,7 +357,7 @@ export function NewAutomationModal({
   function applyTemplate(template: AutomationTemplate, options: { closePopover: boolean }) {
     setForm({
       ...emptyForm(),
-      name: template.title ?? template.defaultName,
+      name: template.defaultName ?? template.title,
       prompt: template.prompt,
     });
     setSelectedTemplateId(template.id);
@@ -604,7 +604,7 @@ export function NewAutomationModal({
             placeholder={t('routines.fieldNamePlaceholder')}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            aria-label={t('routines.fieldName')}
+            aria-label="Automation title"
             data-testid="automation-modal-title"
           />
           <div className="automation-modal__head-actions">
@@ -1054,6 +1054,8 @@ function SchedulePopover({
   timezones: string[];
   onDone: () => void;
 }) {
+  const t = useT();
+
   return (
     <div className="automation-popover automation-popover--schedule">
       <div className="automation-popover__kinds" role="tablist">
