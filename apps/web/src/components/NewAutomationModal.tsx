@@ -282,7 +282,7 @@ export function NewAutomationModal({
         fetchMcpServers(),
       ]);
       if (canceled) return;
-      setPlugins(pluginResult.status === 'fulfilled' ? pluginResult.value : []);
+      setPlugins(pluginResult.status === 'fulfilled' ? (pluginResult.value ?? []) : []);
       setMcpServers(
         mcpResult.status === 'fulfilled'
           ? (mcpResult.value?.servers ?? []).filter((server) => server.enabled)
@@ -604,7 +604,7 @@ export function NewAutomationModal({
             placeholder={t('routines.fieldNamePlaceholder')}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            aria-label="Automation title"
+            aria-label={t('routines.fieldName')}
             data-testid="automation-modal-title"
           />
           <div className="automation-modal__head-actions">
