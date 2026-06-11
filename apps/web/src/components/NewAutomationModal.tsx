@@ -910,6 +910,8 @@ function TemplatePopover({
   selectedId: string | null;
   onSelect: (template: AutomationTemplate) => void;
 }) {
+  const t = useT();
+
   return (
     <div className="automation-popover automation-popover--templates">
       {templates.map((template) => (
@@ -924,7 +926,7 @@ function TemplatePopover({
           </span>
           <span className="automation-template-option__body">
             <span className="automation-template-option__title">{template.title ?? template.defaultName}</span>
-            <span className="automation-template-option__meta">{kindLabel(template.kind)}</span>
+            <span className="automation-template-option__meta">{kindLabel(template.kind, t)}</span>
           </span>
           {selectedId === template.id ? <Icon name="check" size={13} /> : null}
         </button>
@@ -1162,8 +1164,8 @@ function clampMinute(value: number): number {
   return Math.max(0, Math.min(59, Math.round(value)));
 }
 
-function kindLabel(kind: AutomationTemplateKind): string {
-  if (kind === 'orbit') return 'Orbit';
-  if (kind === 'live-artifact') return 'Live artifact';
-  return 'Automation';
+function kindLabel(kind: AutomationTemplateKind, t: TranslateFn): string {
+  if (kind === 'orbit') return t('automations.kindOrbit');
+  if (kind === 'live-artifact') return t('automations.kindLiveArtifact');
+  return t('automations.kindAutomation');
 }
