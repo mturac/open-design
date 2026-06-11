@@ -2922,7 +2922,7 @@ export const it: Dict = {
   'automations.proposalsAria': 'Proposte di evoluzione automazione',
   'automations.templatesAria': 'Template automazione',
   'automations.runInProgress': 'In corso',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Recupera l\'attività di ieri su GitHub + Linear e riassumi cosa è cambiato.',
   'automations.scheduleStatusPaused': 'In pausa',
   'automations.nextRunManualOnly': 'Solo manuale',
   'automations.nextRunScheduled': 'Pianificata',

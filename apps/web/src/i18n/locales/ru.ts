@@ -2922,7 +2922,7 @@ export const ru: Dict = {
   'automations.proposalsAria': 'Предложения по развитию автоматизации',
   'automations.templatesAria': 'Шаблоны автоматизаций',
   'automations.runInProgress': 'Выполняется',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Собрать вчерашнюю активность в GitHub и Linear и обобщить изменения.',
   'automations.scheduleStatusPaused': 'Приостановлено',
   'automations.nextRunManualOnly': 'Только вручную',
   'automations.nextRunScheduled': 'По расписанию',

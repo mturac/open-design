@@ -2922,7 +2922,7 @@ export const ko: Dict = {
   'automations.proposalsAria': '자동화 진화 제안',
   'automations.templatesAria': '자동화 템플릿',
   'automations.runInProgress': '진행 중',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': '어제의 GitHub + Linear 활동을 가져와 변경된 내용을 요약합니다.',
   'automations.scheduleStatusPaused': '일시중지됨',
   'automations.nextRunManualOnly': '수동 전용',
   'automations.nextRunScheduled': '예약됨',

@@ -2922,7 +2922,7 @@ export const id: Dict = {
   'automations.proposalsAria': 'Usulan evolusi automasi',
   'automations.templatesAria': 'Templat automasi',
   'automations.runInProgress': 'Sedang berjalan',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Tarik aktivitas GitHub + Linear kemarin dan ringkas apa yang berubah.',
   'automations.scheduleStatusPaused': 'Dijeda',
   'automations.nextRunManualOnly': 'Manual saja',
   'automations.nextRunScheduled': 'Terjadwal',

@@ -19,8 +19,9 @@ import type { SkillSummary } from '../types';
 import { listPlugins } from '../state/projects';
 import { fetchMcpServers, type McpServerConfig } from '../state/mcp';
 import { inlineMentionToken } from '../utils/inlineMentions';
-import { useT } from '../i18n';
+import { useI18n, useT } from '../i18n';
 import type { Dict } from '../i18n/types';
+import { localizePluginDescription, localizePluginTitle } from './plugins-home/localization';
 import { describeRoutineSchedule, describeRoutineScheduleParts } from './routineScheduleLabels';
 
 type ProjectSummary = { id: string; name: string };
@@ -245,6 +246,7 @@ export function NewAutomationModal({
   onSaved,
 }: Props) {
   const t = useT();
+  const { locale } = useI18n();
   const editingId = initial?.routine?.id ?? null;
   const [form, setForm] = useState<FormState>(emptyForm);
   const [submitting, setSubmitting] = useState(false);
@@ -407,8 +409,9 @@ export function NewAutomationModal({
   }
 
   function pickPlugin(plugin: InstalledPluginRecord) {
+    const pluginLabel = localizePluginTitle(locale, plugin);
     setSelectedPluginIds((current) => current.includes(plugin.id) ? current : [...current, plugin.id]);
-    replaceMentionWithLabel(plugin.title);
+    replaceMentionWithLabel(pluginLabel);
   }
 
   function pickMcp(server: McpServerConfig) {
@@ -514,7 +517,11 @@ export function NewAutomationModal({
   const filteredPlugins = filterCapabilities(
     plugins,
     mentionQueryNorm,
-    (plugin) => `${plugin.title} ${plugin.id} ${plugin.manifest?.description ?? ''}`,
+    (plugin) => {
+      const title = localizePluginTitle(locale, plugin);
+      const description = localizePluginDescription(locale, plugin);
+      return `${title} ${plugin.id} ${description}`;
+    },
   ).slice(0, 10);
   const filteredMcp = filterCapabilities(
     mcpServers,
@@ -543,17 +550,19 @@ export function NewAutomationModal({
         kind: 'skills' as const,
         id,
         label: skill?.name ?? id,
-        meta: 'Skill',
+        meta: t('chat.designToolbox.kind.skill'),
         icon: 'file' as IconName,
       };
     }),
     ...selectedPluginIds.map((id) => {
       const plugin = plugins.find((item) => item.id === id);
+      const pluginTitle = plugin ? localizePluginTitle(locale, plugin) : null;
+      const pluginDescription = plugin ? localizePluginDescription(locale, plugin) : null;
       return {
         kind: 'plugins' as const,
         id,
-        label: plugin?.title ?? id,
-        meta: 'Plugin',
+        label: pluginTitle ?? id,
+        meta: pluginDescription || plugin?.id || id,
         icon: 'sparkles' as IconName,
       };
     }),
@@ -563,7 +572,7 @@ export function NewAutomationModal({
         kind: 'mcp' as const,
         id,
         label: server?.label || id,
-        meta: 'MCP',
+        meta: t('chat.designToolbox.kind.mcp'),
         icon: 'link' as IconName,
       };
     }),
@@ -573,7 +582,9 @@ export function NewAutomationModal({
         kind: 'connectors' as const,
         id,
         label: connector?.name ?? id,
-        meta: connector?.accountLabel ? `Connector · ${connector.accountLabel}` : 'Connector',
+        meta: connector?.accountLabel
+          ? `${t('chat.designToolbox.kind.connector')} · ${connector.accountLabel}`
+          : t('chat.designToolbox.kind.connector'),
         icon: 'link' as IconName,
       };
     }),
@@ -597,16 +608,16 @@ export function NewAutomationModal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="automation-modal__head">
-          <input
-            ref={titleRef}
-            type="text"
-            className="automation-modal__title-input"
-            placeholder={t('routines.fieldNamePlaceholder')}
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            aria-label="Automation title"
-            data-testid="automation-modal-title"
-          />
+            <input
+              ref={titleRef}
+              type="text"
+              className="automation-modal__title-input"
+              placeholder={t('routines.fieldNamePlaceholder')}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              aria-label={t('routines.fieldName')}
+              data-testid="automation-modal-title"
+            />
           <div className="automation-modal__head-actions">
             <div className="automation-pill__wrap">
               <button
@@ -713,14 +724,14 @@ export function NewAutomationModal({
                 {showPlugins && filteredPlugins.length > 0 ? (
                   <MentionSection label={t('chat.mentionSectionPlugins')}>
                     {filteredPlugins.map((plugin) => (
-                      <MentionItem
-                        key={`plugin-${plugin.id}`}
-                        icon="sparkles"
-                        label={plugin.title}
-                        meta={plugin.manifest?.description ?? plugin.id}
-                        selected={selectedPluginIds.includes(plugin.id)}
-                        onPick={() => pickPlugin(plugin)}
-                      />
+                    <MentionItem
+                      key={`plugin-${plugin.id}`}
+                      icon="sparkles"
+                      label={localizePluginTitle(locale, plugin)}
+                      meta={localizePluginDescription(locale, plugin) || plugin.id}
+                      selected={selectedPluginIds.includes(plugin.id)}
+                      onPick={() => pickPlugin(plugin)}
+                    />
                     ))}
                   </MentionSection>
                 ) : null}
@@ -764,7 +775,7 @@ export function NewAutomationModal({
                   type="button"
                   className={`automation-selected-context__chip is-${item.kind}`}
                   onClick={() => removeSelectedContext(item.kind, item.id)}
-                  title={`Remove ${item.label}`}
+                  title={t('chat.removeAria', { name: item.label })}
                 >
                   <Icon name={item.icon} size={11} />
                   <span>{item.label}</span>
@@ -1075,7 +1086,7 @@ function SchedulePopover({
 
       {form.kind === 'hourly' ? (
         <label className="automation-popover__field">
-          <span>Minute of every hour</span>
+          <span>{t('routines.fieldMinute')}</span>
           <input
             type="number"
             min={0}
@@ -1093,7 +1104,7 @@ function SchedulePopover({
       ) : (
         <>
           {form.kind === 'weekly' ? (
-            <div className="automation-popover__weekdays" aria-label="Weekday">
+            <div className="automation-popover__weekdays" aria-label={t('routines.kind.weekdays')}>
               {WEEKDAYS.map((d) => (
                 <button
                   key={d}
@@ -1109,7 +1120,7 @@ function SchedulePopover({
           ) : null}
           <div className="automation-popover__row">
             <label className="automation-popover__field">
-              <span>Time</span>
+              <span>{t('routines.fieldTime')}</span>
               <input
                 type="time"
                 value={form.time}
@@ -1117,7 +1128,7 @@ function SchedulePopover({
               />
             </label>
             <label className="automation-popover__field">
-              <span>Timezone</span>
+              <span>{t('routines.fieldTimezone')}</span>
               <select
                 value={form.timezone}
                 onChange={(e) => setForm({ ...form, timezone: e.target.value })}
@@ -1139,7 +1150,7 @@ function SchedulePopover({
           className="automation-popover__done-btn"
           onClick={onDone}
         >
-          Done
+          {t('tasks.filter.done')}
         </button>
       </div>
     </div>

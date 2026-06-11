@@ -2922,7 +2922,7 @@ export const ptBR: Dict = {
   'automations.proposalsAria': 'Propostas de evolução da automação',
   'automations.templatesAria': 'Modelos de automação',
   'automations.runInProgress': 'Em andamento',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Buscar a atividade de ontem no GitHub + Linear e resumir o que mudou.',
   'automations.scheduleStatusPaused': 'Pausada',
   'automations.nextRunManualOnly': 'Somente manual',
   'automations.nextRunScheduled': 'Agendada',

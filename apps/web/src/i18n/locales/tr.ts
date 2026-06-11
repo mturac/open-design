@@ -2922,7 +2922,7 @@ export const tr: Dict = {
   'automations.proposalsAria': 'Otomasyon evrim önerileri',
   'automations.templatesAria': 'Otomasyon şablonları',
   'automations.runInProgress': 'Sürüyor',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Dünün GitHub + Linear etkinliğini çek ve nelerin değiştiğini özetle.',
   'automations.scheduleStatusPaused': 'Duraklatıldı',
   'automations.nextRunManualOnly': 'Yalnızca elle',
   'automations.nextRunScheduled': 'Zamanlandı',

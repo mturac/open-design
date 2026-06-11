@@ -2922,7 +2922,7 @@ export const ja: Dict = {
   'automations.proposalsAria': 'オートメーションの進化提案',
   'automations.templatesAria': 'オートメーションのテンプレート',
   'automations.runInProgress': '進行中',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': '昨日の GitHub と Linear のアクティビティを取得し、変更点を要約します。',
   'automations.scheduleStatusPaused': '一時停止',
   'automations.nextRunManualOnly': '手動のみ',
   'automations.nextRunScheduled': 'スケジュール済み',

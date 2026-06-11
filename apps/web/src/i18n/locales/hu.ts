@@ -2922,7 +2922,7 @@ export const hu: Dict = {
   'automations.proposalsAria': 'Automatizálás fejlesztési javaslatai',
   'automations.templatesAria': 'Automatizálási sablonok',
   'automations.runInProgress': 'Folyamatban',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Töltsd le a tegnapi GitHub + Linear tevékenységet, és foglald össze, mi változott.',
   'automations.scheduleStatusPaused': 'Szüneteltetve',
   'automations.nextRunManualOnly': 'Csak kézi',
   'automations.nextRunScheduled': 'Ütemezve',

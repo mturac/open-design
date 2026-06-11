@@ -2922,7 +2922,7 @@ export const uk: Dict = {
   'automations.proposalsAria': 'Пропозиції розвитку автоматизації',
   'automations.templatesAria': 'Шаблони автоматизацій',
   'automations.runInProgress': 'Виконується',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'Отримати вчорашню активність у GitHub + Linear і підсумувати, що змінилося.',
   'automations.scheduleStatusPaused': 'Призупинено',
   'automations.nextRunManualOnly': 'Лише вручну',
   'automations.nextRunScheduled': 'Заплановано',

@@ -2922,7 +2922,7 @@ export const th: Dict = {
   'automations.proposalsAria': 'ข้อเสนอการพัฒนาระบบอัตโนมัติ',
   'automations.templatesAria': 'เทมเพลตระบบอัตโนมัติ',
   'automations.runInProgress': 'กำลังดำเนินการ',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'ดึงกิจกรรม GitHub + Linear ของเมื่อวานและสรุปสิ่งที่เปลี่ยนแปลง',
   'automations.scheduleStatusPaused': 'หยุดชั่วคราว',
   'automations.nextRunManualOnly': 'รันด้วยตนเองเท่านั้น',
   'automations.nextRunScheduled': 'ตามกำหนดการ',

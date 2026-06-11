@@ -2922,7 +2922,7 @@ export const fa: Dict = {
   'automations.proposalsAria': 'پیشنهادهای تکامل خودکارسازی',
   'automations.templatesAria': 'قالب‌های خودکارسازی',
   'automations.runInProgress': 'در حال انجام',
-  'automations.promptPlaceholder': 'Tell the model what this automation should do.',
+  'automations.promptPlaceholder': 'فعالیت دیروز GitHub و Linear را دریافت کن و خلاصه‌ای از تغییرات ارائه بده.',
   'automations.scheduleStatusPaused': 'متوقف‌شده',
   'automations.nextRunManualOnly': 'فقط دستی',
   'automations.nextRunScheduled': 'زمان‌بندی‌شده',
