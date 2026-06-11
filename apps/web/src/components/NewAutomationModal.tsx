@@ -282,7 +282,7 @@ export function NewAutomationModal({
         fetchMcpServers(),
       ]);
       if (canceled) return;
-      setPlugins(pluginResult.status === 'fulfilled' ? pluginResult.value : []);
+      setPlugins(pluginResult.status === 'fulfilled' ? (pluginResult.value ?? []) : []);
       setMcpServers(
         mcpResult.status === 'fulfilled'
           ? (mcpResult.value?.servers ?? []).filter((server) => server.enabled)

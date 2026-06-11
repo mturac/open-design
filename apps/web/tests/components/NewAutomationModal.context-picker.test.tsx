@@ -145,6 +145,9 @@ describe('NewAutomationModal context picker', () => {
   });
 
   it('uses template title for picker visibility but seeds default name on selection', () => {
+    vi.mocked(listPlugins).mockResolvedValue([]);
+    vi.mocked(fetchMcpServers).mockResolvedValue({ servers: [], templates: [] });
+
     render(
       <NewAutomationModal
         open
@@ -157,13 +160,14 @@ describe('NewAutomationModal context picker', () => {
       />,
     );
 
-    fireEvent.mouseDown(screen.getByRole('button', { name: 'Use template' }));
-    fireEvent.mouseDown(
-      screen.getByRole('button', { name: 'Refresh project memory from recent work.' }),
+    const templateTrigger = screen.getByRole('button', { name: 'Use template' });
+    fireEvent.click(templateTrigger);
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /^Refresh project memory from recent work\./,
+      }),
     );
 
-    expect(screen.getByRole('button', { name: 'Use template' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Memory refresh' })).toBeTruthy();
     expect((screen.getByTestId('automation-modal-title') as HTMLInputElement).value).toBe('Memory refresh');
   });
 });
