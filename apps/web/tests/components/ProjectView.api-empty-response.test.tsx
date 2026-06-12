@@ -218,12 +218,12 @@ const project: Project = {
   updatedAt: 1,
 };
 
-function renderProjectView(renderProject: Project = project) {
+function renderProjectView(renderProject: Project = project, renderConfig: AppConfig = config) {
   return render(
     <ProjectView
       project={renderProject}
       routeFileName={null}
-      config={config}
+      config={renderConfig}
       agents={[] as AgentInfo[]}
       skills={[] as SkillSummary[]}
       designTemplates={[] as SkillSummary[]}
@@ -595,6 +595,55 @@ describe('ProjectView API empty response handling', () => {
     });
     expect(mockedWriteProjectTextFile).not.toHaveBeenCalled();
     expect(screen.queryByText(/Refused to save artifact/i)).toBeNull();
+  });
+
+  it('forwards Anthropic endpoint mode to BYOK memory extraction', async () => {
+    const memoryRequests: unknown[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/memory/system-prompt') {
+        return Response.json({ body: '' });
+      }
+      if (url === '/api/memory/extract') {
+        memoryRequests.push(JSON.parse(String(init?.body ?? '{}')));
+        return Response.json({ changed: [], attemptedLLM: false });
+      }
+      return Response.json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    mockedStreamMessage.mockImplementation(async (
+      _cfg: AppConfig,
+      _system: string,
+      _history: ChatMessage[],
+      _signal: AbortSignal,
+      handlers: StreamHandlers,
+    ) => {
+      handlers.onDelta('hello');
+      handlers.onDone('hello');
+    });
+
+    renderProjectView(project, {
+      ...config,
+      apiProtocol: 'anthropic',
+      apiKey: 'sk-ant-test',
+      baseUrl: 'https://example.test/v1/messages',
+      anthropicBaseUrlMode: 'messages-endpoint',
+    });
+
+    await sendTestPrompt();
+
+    await waitFor(() => expect(memoryRequests.length).toBeGreaterThanOrEqual(1));
+    expect(memoryRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          chatProvider: expect.objectContaining({
+            provider: 'anthropic',
+            baseUrl: 'https://example.test/v1/messages',
+            anthropicBaseUrlMode: 'messages-endpoint',
+          }),
+        }),
+      ]),
+    );
   });
 
   it('injects ElevenLabs voice options into API-mode audio project prompts', async () => {

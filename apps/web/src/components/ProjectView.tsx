@@ -4212,6 +4212,10 @@ export function ProjectView({
                   config.apiProtocol === 'azure'
                     ? config.apiVersion ?? ''
                     : '',
+                anthropicBaseUrlMode:
+                  config.apiProtocol === 'anthropic'
+                    ? config.anthropicBaseUrlMode ?? 'api-root'
+                    : undefined,
               }
             : undefined;
         if (userText.length > 0) {
