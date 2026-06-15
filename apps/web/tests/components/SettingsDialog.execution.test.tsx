@@ -1080,6 +1080,51 @@ describe('SettingsDialog execution settings BYOK interactions', () => {
     expect(testConnectionCalls).toHaveLength(1);
   });
 
+  it('auto-tests BYOK again when the Anthropic URL type changes', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/memory') {
+        return new Response(
+          JSON.stringify({ enabled: true, memories: [], extraction: null }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      expect(url).toBe('/api/test/connection');
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        anthropicBaseUrlMode?: string;
+      };
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          kind: 'ok',
+          latencyMs: body.anthropicBaseUrlMode === 'messages-endpoint' ? 22 : 21,
+          model: 'claude-sonnet-4-5',
+          sample: 'pong',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderSettingsDialog({ apiKey: 'sk-ant-test-provider' });
+
+    expect(await screen.findByText(/Connected\. Replied in 21 ms/)).toBeTruthy();
+
+    fireEvent.change(screen.getByDisplayValue('API root (append /v1/messages)'), {
+      target: { value: 'messages-endpoint' },
+    });
+
+    expect(await screen.findByText(/Connected\. Replied in 22 ms/)).toBeTruthy();
+    const testConnectionBodies = fetchMock.mock.calls
+      .filter(([input]) => input.toString() === '/api/test/connection')
+      .map(([, init]) => JSON.parse(String(init?.body ?? '{}')));
+
+    expect(testConnectionBodies).toHaveLength(2);
+    expect(testConnectionBodies[1]).toMatchObject({
+      anthropicBaseUrlMode: 'messages-endpoint',
+    });
+  });
+
   it('auto-tests BYOK after required fields become locally valid', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();

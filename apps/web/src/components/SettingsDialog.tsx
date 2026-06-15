@@ -2765,6 +2765,7 @@ export function SettingsDialog({
     byokDraftValidation,
     cfg.apiKey,
     cfg.apiVersion,
+    cfg.anthropicBaseUrlMode,
     cfg.baseUrl,
     cfg.mode,
     cfg.model,
