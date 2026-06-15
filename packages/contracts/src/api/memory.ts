@@ -10,6 +10,7 @@
 // stays a plain `cat` / `editor` round trip — no DB, no fancy schema.
 
 import type { MemoryTreeNode } from './automations.js';
+import type { AnthropicBaseUrlMode } from './connectionTest';
 
 // `profile` — the singleton structured "who I am / how I work" entry (one
 //   well-known id `user_profile`) the intent gateway reads to rewrite a short
@@ -286,6 +287,7 @@ export interface ExtractMemoryRequest {
     provider: MemoryExtractionProvider;
     apiKey?: string;
     baseUrl?: string;
+    anthropicBaseUrlMode?: AnthropicBaseUrlMode;
     /** Azure-only `?api-version=…` value. Ignored for other providers. */
     apiVersion?: string;
     /** Optional — the daemon prefers a fast/cheap default per protocol
