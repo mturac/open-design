@@ -5,7 +5,12 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AvatarMenu } from '../../src/components/AvatarMenu';
-import type { AgentInfo, AppConfig, ExecMode } from '../../src/types';
+import { fetchProviderModels } from '../../src/providers/provider-models';
+import type { AgentInfo, AppConfig, ExecMode, ProviderModelOption } from '../../src/types';
+
+vi.mock('../../src/providers/provider-models', () => ({
+  fetchProviderModels: vi.fn(),
+}));
 
 vi.mock('../../src/i18n', () => ({
   useT: () => (key: string) => key,
@@ -72,6 +77,7 @@ function renderMenu({
   onAgentModelChange = vi.fn<AgentModelChangeHandler>(),
   onOpenSettings = vi.fn<OpenSettingsHandler>(),
   onRefreshAgents = vi.fn<VoidHandler>(),
+  providerModelsCache,
 }: {
   config?: AppConfig;
   agents?: AgentInfo[];
@@ -81,6 +87,7 @@ function renderMenu({
   onAgentModelChange?: ReturnType<typeof vi.fn<AgentModelChangeHandler>>;
   onOpenSettings?: ReturnType<typeof vi.fn<OpenSettingsHandler>>;
   onRefreshAgents?: ReturnType<typeof vi.fn<VoidHandler>>;
+  providerModelsCache?: Record<string, ProviderModelOption[]>;
 } = {}) {
   render(
     <AvatarMenu
@@ -92,6 +99,7 @@ function renderMenu({
       onAgentModelChange={onAgentModelChange}
       onOpenSettings={onOpenSettings}
       onRefreshAgents={onRefreshAgents}
+      providerModelsCache={providerModelsCache}
     />,
   );
   return {
@@ -285,5 +293,38 @@ describe('AvatarMenu', () => {
       '/api/integrations/vela/analytics-entry',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('forwards Anthropic Messages endpoint mode when warming BYOK models', async () => {
+    const fetchMock = vi.mocked(fetchProviderModels);
+    fetchMock.mockResolvedValue({
+      ok: false,
+      kind: 'unsupported_protocol',
+      latencyMs: 1,
+      detail: 'Model discovery requires an API root URL.',
+    });
+
+    renderMenu({
+      config: {
+        ...baseConfig,
+        mode: 'api',
+        apiKey: 'sk-test',
+        baseUrl: 'https://relay.example.com/v1/messages',
+        apiProviderBaseUrl: 'https://relay.example.com/v1/messages',
+        anthropicBaseUrlMode: 'messages-endpoint',
+      },
+      providerModelsCache: {},
+    });
+
+    openMenu();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith({
+        protocol: 'anthropic',
+        baseUrl: 'https://relay.example.com/v1/messages',
+        apiKey: 'sk-test',
+        anthropicBaseUrlMode: 'messages-endpoint',
+      });
+    });
   });
 });

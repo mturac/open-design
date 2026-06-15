@@ -465,6 +465,52 @@ describe('InlineModelSwitcher AMR row', () => {
     ]);
   });
 
+  it('forwards Anthropic Messages endpoint mode when warming the home picker cache', async () => {
+    const fetchMock = vi.mocked(fetchProviderModels);
+    fetchMock.mockResolvedValue({
+      ok: false,
+      kind: 'unsupported_protocol',
+      latencyMs: 1,
+      detail: 'Model discovery requires an API root URL.',
+    });
+
+    render(
+      <InlineModelSwitcher
+        config={{
+          ...baseConfig,
+          mode: 'api',
+          apiProtocol: 'anthropic',
+          baseUrl: 'https://relay.example.com/v1/messages',
+          apiProviderBaseUrl: 'https://relay.example.com/v1/messages',
+          anthropicBaseUrlMode: 'messages-endpoint',
+          apiKey: 'sk-test',
+          model: 'claude-sonnet-4-5',
+        }}
+        agents={[amrAgent, codexAgent]}
+        daemonLive={true}
+        onModeChange={vi.fn()}
+        onAgentChange={vi.fn()}
+        onAgentModelChange={vi.fn()}
+        onApiProtocolChange={vi.fn()}
+        onApiModelChange={vi.fn()}
+        providerModelsCache={{}}
+        onProviderModelsCacheChange={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('inline-model-switcher-chip'));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith({
+        protocol: 'anthropic',
+        baseUrl: 'https://relay.example.com/v1/messages',
+        apiKey: 'sk-test',
+        anthropicBaseUrlMode: 'messages-endpoint',
+      });
+    });
+  });
+
   it('does not fetch from the home picker for a keyed protocol with no API key', async () => {
     const fetchMock = vi.mocked(fetchProviderModels);
     render(

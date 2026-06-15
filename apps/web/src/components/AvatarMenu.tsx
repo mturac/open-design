@@ -209,6 +209,9 @@ export function AvatarMenu({
     config.baseUrl ?? '',
     config.apiKey ?? '',
     config.apiVersion ?? '',
+    apiProtocol === 'anthropic'
+      ? config.anthropicBaseUrlMode ?? 'api-root'
+      : 'api-root',
   );
   const fetchedByokModels = providerModelsCache?.[byokProviderModelsKey] ?? discoveredProviderModels[byokProviderModelsKey] ?? [];
 
@@ -224,6 +227,10 @@ export function AvatarMenu({
       protocol: apiProtocol,
       baseUrl,
       apiKey,
+      anthropicBaseUrlMode:
+        apiProtocol === 'anthropic'
+          ? config.anthropicBaseUrlMode ?? 'api-root'
+          : undefined,
     }).then((result) => {
       if (cancelled || !result.ok || !result.models?.length) return;
       setDiscoveredProviderModels((current) => ({
@@ -238,6 +245,7 @@ export function AvatarMenu({
     open,
     config.mode,
     apiProtocol,
+    config.anthropicBaseUrlMode,
     config.baseUrl,
     config.apiKey,
     byokProviderModelsKey,

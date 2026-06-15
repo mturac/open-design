@@ -496,6 +496,10 @@ export function InlineModelSwitcher({
       protocol: apiProtocol,
       baseUrl,
       apiKey: config.apiKey,
+      anthropicBaseUrlMode:
+        apiProtocol === 'anthropic'
+          ? config.anthropicBaseUrlMode ?? 'api-root'
+          : undefined,
     })
       .then((result) => {
         if (active && result.ok && result.models?.length) {
