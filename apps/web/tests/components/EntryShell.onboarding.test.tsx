@@ -1198,12 +1198,15 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
   });
 
   it('persists the BYOK config before finishing onboarding', async () => {
+    const providerModelBodies: Array<Record<string, unknown>> = [];
+    const connectionTestBodies: Array<Record<string, unknown>> = [];
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
       if (url.endsWith('/api/integrations/vela/status')) {
         return jsonResponse({ loggedIn: false, profile: 'prod', user: null, configPath: '/x' });
       }
       if (url.endsWith('/api/provider/models') && init?.method === 'POST') {
+        providerModelBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
         return jsonResponse({
           ok: true,
           kind: 'success',
@@ -1215,6 +1218,7 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
         });
       }
       if (url.endsWith('/api/test/connection') && init?.method === 'POST') {
+        connectionTestBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
         return jsonResponse({
           ok: true,
           kind: 'success',
@@ -1229,7 +1233,8 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Bring your own key/i }));
     fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
-    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://api.anthropic.com' } });
+    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://relay.example.com/v1/messages' } });
+    chooseDropdownOption('Anthropic URL type', 'Full Messages endpoint');
     fireEvent.click(screen.getByRole('button', { name: /Fetch models/i }));
     await waitFor(() => {
       expect(screen.getByText('Fetched 2 models.')).toBeTruthy();
@@ -1258,12 +1263,23 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     expect(props.onApiModelChange).toHaveBeenCalledWith('claude-opus-4-8');
     expect(props.onConfigPersist).toHaveBeenCalled();
     expect(props.onCompleteOnboarding).toHaveBeenCalledTimes(1);
+    expect(providerModelBodies.at(-1)).toMatchObject({
+      protocol: 'anthropic',
+      baseUrl: 'https://relay.example.com/v1/messages',
+      anthropicBaseUrlMode: 'messages-endpoint',
+    });
+    expect(connectionTestBodies.at(-1)).toMatchObject({
+      protocol: 'anthropic',
+      baseUrl: 'https://relay.example.com/v1/messages',
+      anthropicBaseUrlMode: 'messages-endpoint',
+    });
     expect((props.onConfigPersist as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]).toMatchObject({
       mode: 'api',
       apiProtocol: 'anthropic',
       apiKey: 'test-api-key',
-      baseUrl: 'https://api.anthropic.com',
+      baseUrl: 'https://relay.example.com/v1/messages',
       model: 'claude-opus-4-8',
+      anthropicBaseUrlMode: 'messages-endpoint',
       apiProviderBaseUrl: null,
     });
   });

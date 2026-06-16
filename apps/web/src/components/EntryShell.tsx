@@ -22,6 +22,7 @@ import {
 import {
   defaultScenarioPluginIdForProjectMetadata,
   PROFILE_MEMORY_ID,
+  type AnthropicBaseUrlMode,
   type ChatSessionMode,
   type ConnectorDetail,
   type InstalledPluginRecord,
@@ -2386,6 +2387,7 @@ function OnboardingView({
                     apiProtocol={apiProtocol}
                     apiKey={config.apiKey}
                     baseUrl={config.baseUrl}
+                    anthropicBaseUrlMode={config.anthropicBaseUrlMode ?? 'api-root'}
                     model={config.model}
                     selectedProvider={selectedProvider}
                     providerOptions={byokProviderOptions}
@@ -2411,6 +2413,9 @@ function OnboardingView({
                     }}
                     onBaseUrlChange={(baseUrl) =>
                       updateApiConfig({ baseUrl, apiProviderBaseUrl: null })
+                    }
+                    onAnthropicBaseUrlModeChange={(anthropicBaseUrlMode) =>
+                      updateApiConfig({ anthropicBaseUrlMode })
                     }
                     modelOptions={byokModelOptions}
                     testState={visibleProviderTestState}
@@ -2803,6 +2808,7 @@ function OnboardingByokSetupPanel({
   apiProtocol,
   apiKey,
   baseUrl,
+  anthropicBaseUrlMode,
   model,
   selectedProvider,
   providerOptions,
@@ -2813,6 +2819,7 @@ function OnboardingByokSetupPanel({
   onApiKeyChange,
   onModelChange,
   onBaseUrlChange,
+  onAnthropicBaseUrlModeChange,
   modelOptions,
   testState,
   canTest,
@@ -2824,6 +2831,7 @@ function OnboardingByokSetupPanel({
   apiProtocol: ApiProtocol;
   apiKey: string;
   baseUrl: string;
+  anthropicBaseUrlMode: AnthropicBaseUrlMode;
   model: string;
   selectedProvider: KnownProvider | null;
   providerOptions: Array<{ value: string; label: string }>;
@@ -2835,6 +2843,7 @@ function OnboardingByokSetupPanel({
   onApiKeyChange: (apiKey: string) => void;
   onModelChange: (model: string) => void;
   onBaseUrlChange: (baseUrl: string) => void;
+  onAnthropicBaseUrlModeChange: (mode: AnthropicBaseUrlMode) => void;
   testState:
     | { status: 'idle' }
     | { status: 'running'; inputKey: string }
@@ -2931,6 +2940,23 @@ function OnboardingByokSetupPanel({
             onChange={(event) => onBaseUrlChange(event.target.value)}
           />
         </label>
+        {apiProtocol === 'anthropic' ? (
+          <OnboardingDropdown
+            label={t('settings.anthropicBaseUrlMode')}
+            placeholder={t('settings.anthropicBaseUrlModeRoot')}
+            value={anthropicBaseUrlMode}
+            options={[
+              { value: 'api-root', label: t('settings.anthropicBaseUrlModeRoot') },
+              { value: 'messages-endpoint', label: t('settings.anthropicBaseUrlModeMessages') },
+            ]}
+            onChange={(value) =>
+              onAnthropicBaseUrlModeChange(
+                value === 'messages-endpoint' ? 'messages-endpoint' : 'api-root',
+              )
+            }
+            placement="top"
+          />
+        ) : null}
         {modelOptions.length > 0 ? (
           <OnboardingDropdown
             label={t('settings.model')}
