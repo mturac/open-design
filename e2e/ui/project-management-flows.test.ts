@@ -5,15 +5,17 @@ import { routeAgents } from '../lib/playwright/mock-factory.js';
 
 // The `/projects` view in `EntryShell` renders a `CenteredLoader` until
 // `projectsLoading || skillsLoading || designSystemsLoading` all clear
-// (`apps/web/src/components/EntryShell.tsx`), and `designSystemsLoading` only
-// clears once `GET /api/design-systems` resolves (`App.tsx` `dsLoading`). A test
-// that lands on `/projects` but leaves `/api/design-systems` unmocked therefore
-// gates its first assertion on the real daemon's response time — fast locally,
-// but a flaky >10s loader under CI load (this dequeued PR #4548 from the merge
-// queue). Stub the endpoint so the projects view renders deterministically.
+// (`apps/web/src/components/EntryShell.tsx`). `designSystemsLoading` waits for
+// `GET /api/design-systems`, and `skillsLoading` waits for both `/api/skills`
+// and `/api/design-templates`. Tests that land on `/projects` must mock these
+// registries so their first assertions do not depend on the real daemon's
+// response time under CI load.
 async function stubDesignSystemsEmpty(page: Page): Promise<void> {
   await page.route('**/api/design-systems', async (route) => {
     await route.fulfill({ json: { designSystems: [] } });
+  });
+  await page.route('**/api/design-templates', async (route) => {
+    await route.fulfill({ json: { designTemplates: [] } });
   });
 }
 
