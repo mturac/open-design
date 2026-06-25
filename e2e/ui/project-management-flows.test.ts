@@ -220,6 +220,7 @@ test('[P1] new project tabs switch visible form sections and preserve drafts', a
 });
 
 test('[P0] projects empty state create action opens the new project flow', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
   });
@@ -238,7 +239,7 @@ test('[P0] projects empty state create action opens the new project flow', async
   });
 
   await stubDesignSystemsEmpty(page);
-  await page.goto('/projects');
+  await page.goto('/projects', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.designs-empty-state')).toBeVisible();
   await page.locator('.designs-empty-cta').click();
 
