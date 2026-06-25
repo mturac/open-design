@@ -11,6 +11,9 @@ import { routeAgents } from '../lib/playwright/mock-factory.js';
 // registries so their first assertions do not depend on the real daemon's
 // response time under CI load.
 async function stubDesignSystemsEmpty(page: Page): Promise<void> {
+  await page.route('**/api/skills', async (route) => {
+    await route.fulfill({ json: { skills: TAB_SKILLS } });
+  });
   await page.route('**/api/design-systems', async (route) => {
     await route.fulfill({ json: { designSystems: [] } });
   });
