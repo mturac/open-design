@@ -1079,7 +1079,7 @@ describe('EntryShell onboarding Open Design AMR runtime', () => {
     fireEvent.click(screen.getByRole('button', { name: /Bring your own key/i }));
     fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
     fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://relay.example.com/v1/messages' } });
-    chooseDropdownOption('Anthropic URL type', 'Full Messages endpoint');
+    chooseOnboardingOption('Anthropic URL type', 'Full Messages endpoint');
     fireEvent.click(screen.getByRole('button', { name: /Fetch models/i }));
     await waitFor(() => {
       expect(screen.getByText('Fetched 2 models.')).toBeTruthy();
