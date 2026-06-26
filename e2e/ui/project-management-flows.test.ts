@@ -7,10 +7,11 @@ import { routeAgents } from '../lib/playwright/mock-factory.js';
 // `projectsLoading || skillsLoading || designSystemsLoading` all clear
 // (`apps/web/src/components/EntryShell.tsx`). `designSystemsLoading` waits for
 // `GET /api/design-systems`, and `skillsLoading` waits for both `/api/skills`
-// and `/api/design-templates`. Tests that land on `/projects` must mock these
-// registries so their first assertions do not depend on the real daemon's
-// response time under CI load.
-async function stubDesignSystemsEmpty(page: Page): Promise<void> {
+// and `/api/design-templates`. Tests that land on `/projects` should stub the
+// catalog endpoints that are unrelated to the project-list behavior under test;
+// otherwise their first assertions can depend on daemon/catalog timing instead
+// of the UI contract.
+async function stubCatalogsEmpty(page: Page): Promise<void> {
   await page.route('**/api/skills', async (route) => {
     await route.fulfill({ json: { skills: TAB_SKILLS } });
   });
@@ -238,7 +239,7 @@ test('[P0] projects empty state create action opens the new project flow', async
     await route.continue();
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('.designs-empty-state')).toBeVisible();
   await page.locator('.designs-empty-cta').click();
@@ -1267,7 +1268,7 @@ test('[P2] projects sub tabs switch between Recent and Your designs ordering', a
     await route.fulfill({ json: { liveArtifacts: [] } });
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects');
   await expectDesignsView(page);
 
@@ -1423,7 +1424,7 @@ test('[P2] projects page shows the empty state when there are no projects', asyn
     await route.continue();
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects');
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.locator('.tab-empty')).toBeVisible();
@@ -1453,7 +1454,7 @@ test('[P2] projects page shows the no-results state and recovers when search is 
     await route.fulfill({ json: { liveArtifacts: [] } });
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects');
   await expectDesignsView(page);
   await expect(homeDesignCard(page, 'Searchable Prototype')).toBeVisible();
@@ -1489,7 +1490,7 @@ test('[P2] projects grid overflow menu closes on outside click and Escape', asyn
     await route.fulfill({ json: { liveArtifacts: [] } });
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects');
   await expectDesignsView(page);
 
@@ -1560,7 +1561,7 @@ test('[P2] projects kanban view groups cards into status columns', async ({ page
     await route.fulfill({ json: { liveArtifacts: [] } });
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects');
   await expectDesignsView(page);
   await page.getByTestId('designs-view-kanban').click();
@@ -1651,7 +1652,7 @@ test('[P1] projects page shows live artifact cards, supports search, and opens t
     });
   });
 
-  await stubDesignSystemsEmpty(page);
+  await stubCatalogsEmpty(page);
   await page.goto('/projects');
   await expectDesignsView(page);
 
