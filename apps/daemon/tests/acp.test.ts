@@ -1451,6 +1451,94 @@ test('attachAcpSession resumes via session/load when resumeSessionId is set', ()
   assert.equal(requests.some((entry) => entry.method === 'session/new'), false);
 });
 
+test('attachAcpSession accepts id-less session/load completions', () => {
+  const child = new FakeAcpChild();
+  const writes: string[] = [];
+  const events: Array<{ event: string; payload: unknown }> = [];
+  child.stdin.on('data', (chunk) => writes.push(String(chunk)));
+
+  const session = attachAcpSession({
+    child: child as never,
+    prompt: 'continue',
+    cwd: '/tmp/od-project',
+    resumeSessionId: 'oc-prev',
+    send: (event, payload) => events.push({ event, payload }),
+  });
+
+  writeAcpResult(child, 1, {});
+  writeAcpResult(child, 2, null);
+  writeAcpResult(child, 3, {});
+
+  const requests = parseRpcWrites(writes);
+  assert.deepEqual(requests.map((entry) => entry.method).filter(Boolean), [
+    'initialize',
+    'session/load',
+    'session/prompt',
+  ]);
+  assert.deepEqual(requests[2]?.params, {
+    sessionId: 'oc-prev',
+    prompt: [{ type: 'text', text: 'continue' }],
+  });
+  assert.equal(session.getDurableSessionId(), 'oc-prev');
+  assert.equal(events.some((entry) => entry.event === 'error'), false);
+});
+
+test('attachAcpSession keeps the stored durable handle when session/load omits it', () => {
+  const child = new FakeAcpChild();
+  const writes: string[] = [];
+  child.stdin.on('data', (chunk) => writes.push(String(chunk)));
+
+  const session = attachAcpSession({
+    child: child as never,
+    prompt: 'continue',
+    cwd: '/tmp/od-project',
+    resumeSessionId: 'oc-prev',
+    send: () => {},
+  });
+
+  writeAcpResult(child, 1, {});
+  writeAcpResult(child, 2, { sessionId: 'vela-wrapper-1' });
+  writeAcpResult(child, 3, {});
+
+  const promptRequest = parseRpcWrites(writes).find((entry) => entry.method === 'session/prompt');
+  assert.deepEqual(promptRequest?.params, {
+    sessionId: 'vela-wrapper-1',
+    prompt: [{ type: 'text', text: 'continue' }],
+  });
+  assert.equal(session.getDurableSessionId(), 'oc-prev');
+});
+
+test('attachAcpSession ignores restored ACP history before the resumed prompt starts', () => {
+  const child = new FakeAcpChild();
+  const events: Array<{ event: string; payload: unknown }> = [];
+
+  attachAcpSession({
+    child: child as never,
+    prompt: 'continue',
+    cwd: '/tmp/od-project',
+    resumeSessionId: 'oc-prev',
+    send: (event, payload) => events.push({ event, payload }),
+  });
+
+  writeAcpResult(child, 1, {});
+  writeAcpUpdate(child, {
+    sessionUpdate: 'agent_message_chunk',
+    content: { text: 'old restored answer' },
+  });
+  writeAcpResult(child, 2, {});
+  writeAcpUpdate(child, {
+    sessionUpdate: 'agent_message_chunk',
+    content: { text: 'new answer' },
+  });
+  writeAcpResult(child, 3, {});
+
+  const textDeltas = events
+    .filter((entry) => entry.event === 'agent' && (entry.payload as { type?: unknown }).type === 'text_delta')
+    .map((entry) => (entry.payload as { delta?: unknown }).delta);
+
+  assert.deepEqual(textDeltas, ['new answer']);
+});
+
 test('attachAcpSession captures the durable session handle from the result', () => {
   const child = new FakeAcpChild();
   const session = attachAcpSession({

@@ -939,6 +939,7 @@ export function attachAcpSession({
   let promptRequestId: JsonRpcId | null = null;
   let setModelRequestId: JsonRpcId | null = null;
   let sessionId: string | null = null;
+  let sessionStartMethod: 'session/load' | 'session/new' | null = null;
   // The durable upstream session handle reported by the agent on session/new or
   // session/load (vela's `openCodeSessionId`). The caller stores it per
   // conversation to resume next turn. Distinct from `sessionId`, which is the
@@ -1312,6 +1313,9 @@ export function attachAcpSession({
     }
     const update = asObject(params?.update);
     if (obj.method === 'session/update' && update) {
+      if (sessionStartMethod === 'session/load' && promptRequestId === null) {
+        return;
+      }
       if (update.sessionUpdate !== 'agent_message_chunk' && update.sessionUpdate !== 'agent_thought_chunk') {
         send('agent', {
           type: 'status',
@@ -1484,13 +1488,24 @@ export function attachAcpSession({
       }
       return;
     }
-    if (obj.id !== expectedId || !result) {
+    if (obj.id !== expectedId) {
+      return;
+    }
+    const responseResult: JsonObject | null =
+      result ??
+      (
+        expectedId === 2 && sessionStartMethod === 'session/load'
+          ? {}
+          : null
+      );
+    if (!responseResult) {
       return;
     }
     if (expectedId === 1) {
       expectedId = nextId;
       if (resumeSessionId) {
         // Resume the prior upstream session instead of creating a fresh one.
+        sessionStartMethod = 'session/load';
         writeRpc(
           nextId,
           'session/load',
@@ -1498,6 +1513,7 @@ export function attachAcpSession({
           'session/load',
         );
       } else {
+        sessionStartMethod = 'session/new';
         writeRpc(
           nextId,
           'session/new',
@@ -1512,15 +1528,19 @@ export function attachAcpSession({
       return;
     }
     if (expectedId === 2) {
-      sessionId = typeof result.sessionId === 'string' ? result.sessionId : null;
+      const restoredSessionId =
+        sessionStartMethod === 'session/load' && typeof resumeSessionId === 'string' && resumeSessionId.trim()
+          ? resumeSessionId
+          : null;
+      sessionId = typeof responseResult.sessionId === 'string' ? responseResult.sessionId : restoredSessionId;
       // The durable handle for resuming this session on the next turn.
       durableSessionId =
-        typeof result.openCodeSessionId === 'string' ? result.openCodeSessionId : null;
+        typeof responseResult.openCodeSessionId === 'string' ? responseResult.openCodeSessionId : restoredSessionId;
       // session/new acknowledged with a session id = handshake done (#3408 §4).
       if (sessionId) onSessionInit?.();
-      const modelConfig = findModelConfigOption(result.configOptions);
+      const modelConfig = findModelConfigOption(responseResult.configOptions);
       modelConfigId = modelConfig?.configId ?? null;
-      activeModel = currentModelFromSessionResult(result);
+      activeModel = currentModelFromSessionResult(responseResult);
       if (sessionId && activeModel) {
         send('agent', { type: 'status', label: 'model', model: activeModel });
       }
@@ -1541,14 +1561,14 @@ export function attachAcpSession({
         return;
       }
       if (!sessionId) {
-        fail(`invalid session/new response: ${rawLine}`);
+        fail(`invalid ${sessionStartMethod ?? 'session/new'} response: ${rawLine}`);
         return;
       }
       sendPrompt();
       return;
     }
     if (promptRequestId !== null && obj.id === promptRequestId) {
-      const usage = formatUsage(result.usage);
+      const usage = formatUsage(responseResult.usage);
       if (!emittedVisibleTextChunk && !emittedConcreteToolEvent && modelUnavailableErrorCode) {
         const outputTokens = usage?.output_tokens;
         const hadCompletionTokens = typeof outputTokens === 'number' && outputTokens > 0;
@@ -1573,11 +1593,11 @@ export function attachAcpSession({
         }
         return;
       }
-      finishCleanPrompt(result.usage);
+      finishCleanPrompt(responseResult.usage);
       return;
     }
     if (sessionId && model && model !== 'default' && obj.id === expectedId) {
-      activeModel = currentModelFromSessionResult(result) ?? model;
+      activeModel = currentModelFromSessionResult(responseResult) ?? model;
       send('agent', { type: 'status', label: 'model', model: activeModel });
       sendPrompt();
     }
