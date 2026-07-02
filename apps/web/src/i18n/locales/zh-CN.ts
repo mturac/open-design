@@ -3945,7 +3945,7 @@ export const zhCN: Dict = {
   "automations.templatesTitle": "模板",
   "automations.templatesSub": "Orbit 和实时看板都是同一自动化流程中的模板。",
   "automations.templatesCount": "{total} 个中的 {filtered} 个",
-  "automations.templateFiltersAria": "模板筛选",
+  "automations.templateFiltersAria": "模板筛选器",
   "automations.templatesEmptyTitle": "此分类下还没有模板。",
   "automations.templatesEmptyBody": "换一个筛选条件，或从空白自动化开始。",
   "automations.useTemplate": "使用模板",

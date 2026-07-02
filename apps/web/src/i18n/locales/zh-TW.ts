@@ -3952,7 +3952,7 @@ export const zhTW: Dict = {
   "automations.templatesTitle": "範本",
   "automations.templatesSub": "Orbit 與即時看板都是同一自動化流程中的範本。",
   "automations.templatesCount": "{total} 個中的 {filtered} 個",
-  "automations.templateFiltersAria": "範本篩選",
+  "automations.templateFiltersAria": "範本篩選器",
   "automations.templatesEmptyTitle": "此分類下還沒有範本。",
   "automations.templatesEmptyBody": "換一個篩選條件，或從空白自動化開始。",
   "automations.useTemplate": "使用範本",
