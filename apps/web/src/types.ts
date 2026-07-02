@@ -3,6 +3,7 @@ import type {
   AgentDiagnostic,
   AgentFixIntent,
   AgentCliEnvPrefs,
+  AgentCliEnvIntentPrefs,
   AgentModelPrefs,
   AgentTestRequest,
   AppVersionInfo,
@@ -104,7 +105,15 @@ export type {
 } from '@open-design/contracts';
 
 export type ExecMode = 'daemon' | 'api';
-export type ApiProtocol = 'anthropic' | 'openai' | 'azure' | 'google' | 'ollama' | 'senseaudio' | 'aihubmix';
+export type ApiProtocol =
+  | 'anthropic'
+  | 'openai'
+  | 'azure'
+  | 'google'
+  | 'ollama'
+  | 'senseaudio'
+  | 'aihubmix'
+  | 'bedrock';
 
 export type LiveArtifactTabId = `live:${string}`;
 // Tab ids are arbitrary strings; the template-literal members below are
@@ -255,12 +264,18 @@ export interface ApiProtocolConfig {
   byokSpeechVoice?: string;
 }
 
+export interface ByokProviderConfigDraft {
+  apiConfig: ApiProtocolConfig;
+  maxTokens?: number;
+}
+
 // Per-CLI model + reasoning the user picked in the model menu. Each agent
 // keeps its own slot so flipping between Codex and Gemini doesn't reset the
 // other one's choice. Missing entries fall back to the agent's first
 // declared model (`'default'` — let the CLI pick).
 export type AgentModelChoice = AgentModelPrefs;
 export type AgentCliEnvConfig = AgentCliEnvPrefs;
+export type AgentCliEnvIntentConfig = AgentCliEnvIntentPrefs;
 
 export type AppTheme = 'system' | 'light' | 'dark';
 
@@ -379,6 +394,8 @@ export interface AppConfig {
   byokSpeechModel?: string;
   byokSpeechVoice?: string;
   apiProtocolConfigs?: Partial<Record<ApiProtocol, ApiProtocolConfig>>;
+  /** BYOK provider drafts keyed by protocol + selected provider base URL. */
+  byokProviderConfigDrafts?: Record<string, ByokProviderConfigDraft>;
   /** Internal config schema/migration version for localStorage upgrades. */
   configMigrationVersion?: number;
   /** Base URL of the selected known provider; cleared once the user customizes provider fields. */
@@ -400,6 +417,9 @@ export interface AppConfig {
   agentModels?: Record<string, AgentModelChoice>;
   // Per-agent non-secret CLI config locations injected into detection and runs.
   agentCliEnv?: AgentCliEnvConfig;
+  // Per-agent marker that says an API key was saved as an explicit Local CLI
+  // environment override, not as an older proxy-only credential.
+  agentCliEnvIntent?: AgentCliEnvIntentConfig;
   // Caps the upstream completion length in API mode. Defaults to 8192 when
   // unset; raise it for providers (e.g. MiMo) that allow longer responses.
   maxTokens?: number;
@@ -429,13 +449,12 @@ export interface AppConfig {
   // Privacy preferences governing what (if anything) is shipped to the
   // PostHog / Langfuse telemetry endpoints. `metrics` and `content`
   // default ON (set by `DEFAULT_CONFIG.telemetry` in state/config.ts) so
-  // the onboarding funnel actually captures the first-run events the
-  // user hasn't had a chance to consent to yet; the post-onboarding
-  // disclosure modal explains this and Settings → Privacy is the
-  // one-click opt-out. `artifactManifest` stays off until the user
-  // turns it on explicitly. A daemon-stored override always wins over
-  // these client defaults — once the user picks a value the modal /
-  // PrivacySection persist it through `syncConfigToDaemon`.
+  // the onboarding funnel actually captures the first-run events. The
+  // post-onboarding disclosure modal explains this and Settings → Privacy is
+  // the one-click opt-out. Complete-context object manifests follow the
+  // content switch. A daemon-stored override always wins over these client
+  // defaults — once the user picks a value the modal / PrivacySection persist
+  // it through `syncConfigToDaemon`.
   telemetry?: TelemetryConfig;
   customInstructions?: string;
   projectLocations?: ProjectLocationPrefs[];

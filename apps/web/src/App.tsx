@@ -7,13 +7,15 @@ import {
   trackProjectCreateResult,
 } from './analytics/events';
 import { deriveUploadCohort } from './analytics/upload-tracking';
+import { setPendingDesignSystemCreateEntry } from './analytics/ds-create-entry';
 import { detectClientType } from './analytics/identity';
 import {
   deriveConfigureGlobals,
-  projectKindToTracking,
+  projectKindFromMetadataToTracking,
   fidelityToTracking,
 } from '@open-design/contracts/analytics';
 import type { AmrModelsResponse, ChatSessionMode } from '@open-design/contracts';
+import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
 import { EntryView } from './components/EntryView';
 import type { IntegrationTab } from './components/IntegrationsView';
 import { MarketplaceView } from './components/MarketplaceView';
@@ -21,6 +23,7 @@ import { PluginDetailView } from './components/PluginDetailView';
 import type { CreateInput, ImportClaudeDesignOutcome } from './components/NewProjectPanel';
 import { MemoryToast } from './components/MemoryToast';
 import { Toast } from './components/Toast';
+import { CenteredLoader } from './components/Loading';
 import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
 import { buildPetTaskCenter } from './components/pet/taskCenter';
 import { migrateCustomPetAtlas } from './components/pet/pets';
@@ -57,10 +60,12 @@ import {
 import {
   RUNS_CHANGED_EVENT,
   fetchAmrModels,
+  fetchVelaLoginStatus,
   listProjectRuns,
   type VelaLoginStatus,
 } from './providers/daemon';
-import { navigate, useRoute } from './router';
+import { AMR_LOGIN_STATUS_EVENT } from './components/amrLoginPolling';
+import { goBack, navigate, useRoute } from './router';
 import {
   fetchDaemonConfig,
   DEFAULT_PET,
@@ -79,9 +84,11 @@ import {
 import { applyAppearanceToDocument } from './state/appearance';
 import { isMacPlatform } from './utils/platform';
 import {
+  createDesignSystemProjectFromProject,
   createProject,
   createPluginShareProject,
   deleteProject as deleteProjectApi,
+  duplicateProject,
   getProject,
   importClaudeDesignZip,
   importFolderProject,
@@ -100,6 +107,7 @@ import { useI18n } from './i18n';
 import { liveArtifactTabId } from './types';
 import type {
   AgentInfo,
+  AgentModelChoice,
   ApiProtocol,
   AppConfig,
   AppVersionInfo,
@@ -112,6 +120,25 @@ import type {
   PromptTemplateSummary,
   SkillSummary,
 } from './types';
+
+type AppCreateProjectInput = Omit<CreateInput, 'metadata'> & {
+  metadata?: CreateInput['metadata'];
+  pendingPrompt?: string;
+  pluginId?: string;
+  pluginType?: string;
+  appliedPluginSnapshotId?: string;
+  pluginInputs?: Record<string, unknown>;
+  conversationMode?: ChatSessionMode;
+  autoSendFirstMessage?: boolean;
+  requestId?: string;
+  pendingFiles?: File[];
+  userWorkingDirToken?: string;
+};
+
+const APP_CONFIG_CHANGED_EVENT = 'open-design:app-config-changed';
+const AMR_AGENT_ID = 'amr';
+const AMR_PROFILE_ENV_KEY = 'OPEN_DESIGN_AMR_PROFILE';
+const AGENT_FOCUS_REFRESH_THROTTLE_MS = 10_000;
 
 export function shouldSyncMediaProvidersOnSave(
   mediaProviders: AppConfig['mediaProviders'],
@@ -131,6 +158,34 @@ function normalizeSavedComposioConfig(config: AppConfig['composio']): AppConfig[
     };
   }
   return { ...(config ?? {}) };
+}
+
+function amrProfileForConfig(config: AppConfig): string | null {
+  const profile = config.agentCliEnv?.[AMR_AGENT_ID]?.[AMR_PROFILE_ENV_KEY];
+  return typeof profile === 'string' && profile ? profile : null;
+}
+
+function sameAgentModelChoice(
+  left: AgentModelChoice | undefined,
+  right: AgentModelChoice | undefined,
+): boolean {
+  return (left?.model ?? null) === (right?.model ?? null)
+    && (left?.reasoning ?? null) === (right?.reasoning ?? null);
+}
+
+function clearStaleAmrModelChoiceOnProfileChange(
+  previous: AppConfig,
+  next: AppConfig,
+): AppConfig {
+  if (amrProfileForConfig(previous) === amrProfileForConfig(next)) return next;
+
+  const previousChoice = previous.agentModels?.[AMR_AGENT_ID];
+  const nextChoice = next.agentModels?.[AMR_AGENT_ID];
+  if (!nextChoice || !sameAgentModelChoice(previousChoice, nextChoice)) return next;
+
+  const nextAgentModels = { ...(next.agentModels ?? {}) };
+  delete nextAgentModels[AMR_AGENT_ID];
+  return { ...next, agentModels: nextAgentModels };
 }
 
 type ProjectListRequest = {
@@ -311,6 +366,7 @@ function AppInner() {
   useEffect(() => {
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-od-app-mounted', '1');
+      document.querySelectorAll('.od-loading-shell').forEach((node) => node.remove());
     }
   }, []);
   const [config, setConfig] = useState<AppConfig>(() => loadConfig());
@@ -324,6 +380,7 @@ function AppInner() {
   // this the failure was swallowed and the user believed their folder was in
   // effect while the project actually stayed in the managed root.
   const [workingDirError, setWorkingDirError] = useState<string | null>(null);
+  const [projectOpenError, setProjectOpenError] = useState<string | null>(null);
   const [settingsWelcome, setSettingsWelcome] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('execution');
   const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlight>(null);
@@ -331,7 +388,9 @@ function AppInner() {
   const [daemonLive, setDaemonLive] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const amrModelsRef = useRef<AmrModelsResponse | null>(null);
+  const amrPollGenerationRef = useRef(0);
   const agentStreamRequestSeqRef = useRef(0);
+  const agentFocusRefreshLastRunRef = useRef(Date.now());
   const [amrPollRestartToken, setAmrPollRestartToken] = useState(0);
   const [providerModelsCache, setProviderModelsCache] = useState<
     Record<string, ProviderModelOption[]>
@@ -348,6 +407,10 @@ function AppInner() {
     Record<string, DesignSystemGenerationJob>
   >({});
   const [projects, setProjects] = useState<Project[]>([]);
+  const projectsRef = useRef<Project[]>(projects);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
   const [petTaskCenter, setPetTaskCenter] = useState<PetTaskCenter>({
     running: [],
     queued: [],
@@ -406,6 +469,11 @@ function AppInner() {
 
   const isCurrentAgentStreamRequest = useCallback((requestId: number) => {
     return agentStreamRequestSeqRef.current === requestId;
+  }, []);
+
+  const restartAmrPolling = useCallback(() => {
+    amrPollGenerationRef.current += 1;
+    setAmrPollRestartToken((current) => current + 1);
   }, []);
 
   // v2 schema removed the standalone `app_launch` event; the initial
@@ -530,6 +598,11 @@ function AppInner() {
     analytics.setIdentity(config.installationId ?? null);
   }, [analytics.setIdentity, config.installationId, config.telemetry?.metrics]);
 
+  // App-level AMR sign-in state — declared here because the configure
+  // globals effect below reads it; the sync effects live next to the
+  // other AMR plumbing further down.
+  const [amrLoginStatus, setAmrLoginStatus] = useState<VelaLoginStatus | null>(null);
+
   // v2 analytics requires every event to carry the configure-state
   // triplet (has_available_configure_cli / configure_type /
   // configure_availability). We push it into the PostHog global register
@@ -559,11 +632,13 @@ function AppInner() {
       agentId: config.agentId,
       agents: agents.map((a) => ({ id: a.id, available: a.available })),
       byokConfigured,
+      amrAuthorized: amrLoginStatus?.loggedIn === true,
     });
     analytics.setConfigureGlobals(globals);
   }, [
     analytics.setConfigureGlobals,
     agentsLoading,
+    amrLoginStatus,
     config.mode,
     config.agentId,
     config.apiKey,
@@ -621,13 +696,23 @@ function AppInner() {
     if (!daemonLive) return;
     let cancelled = false;
     let timer: number | null = null;
+    const pollGeneration = amrPollGenerationRef.current + 1;
+    amrPollGenerationRef.current = pollGeneration;
     const pollDelayMs = 1_000;
     const maxPresetPolls = 10;
     let presetPolls = 0;
 
     const applyAmrModels = async () => {
       const result = await fetchAmrModels();
-      if (cancelled || !result || !Array.isArray(result.models) || result.models.length === 0) return;
+      if (
+        cancelled ||
+        amrPollGenerationRef.current !== pollGeneration ||
+        !result ||
+        !Array.isArray(result.models) ||
+        result.models.length === 0
+      ) {
+        return;
+      }
       amrModelsRef.current = result;
       setAgents((current) => mergeAmrModelsIntoAgents(current, result));
       const shouldPollPreset =
@@ -649,10 +734,41 @@ function AppInner() {
     };
   }, [amrPollRestartToken, daemonLive]);
 
+  // App-level AMR sign-in state. Feeds two analytics globals: the
+  // `amr` configure_type bucket (deriveConfigureGlobals below) and the
+  // `user_id` public param (the AMR account id is the only join key
+  // between this PostHog project and the AMR-side one). Child surfaces
+  // push status changes up via onAmrLoginStatusChange; the global
+  // AMR_LOGIN_STATUS_EVENT covers logins finishing in surfaces that
+  // unmounted before their poll settled.
+  useEffect(() => {
+    let cancelled = false;
+    const sync = async () => {
+      const status = await fetchVelaLoginStatus();
+      if (!cancelled && status) setAmrLoginStatus(status);
+    };
+    void sync();
+    const onStatusEvent = () => {
+      void sync();
+    };
+    window.addEventListener(AMR_LOGIN_STATUS_EVENT, onStatusEvent);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(AMR_LOGIN_STATUS_EVENT, onStatusEvent);
+    };
+  }, [daemonLive]);
+
+  useEffect(() => {
+    analytics.setUserId(
+      amrLoginStatus?.loggedIn === true ? amrLoginStatus.user?.id ?? null : null,
+    );
+  }, [analytics.setUserId, amrLoginStatus]);
+
   const handleAmrLoginStatusChange = useCallback((status: VelaLoginStatus | null) => {
+    if (status) setAmrLoginStatus(status);
     if (status?.loggedIn !== true) return;
-    setAmrPollRestartToken((current) => current + 1);
-  }, []);
+    restartAmrPolling();
+  }, [restartAmrPolling]);
 
   // Bootstrap — detect daemon, then fan out independent fetches so each
   // entry-view tab can render the moment its own data lands. Earlier this
@@ -809,7 +925,10 @@ function AppInner() {
           daemonMediaProvidersLoaded,
         );
         const next = mergeDaemonMediaProviders(
-          mergeDaemonConfig(baseConfig, daemonConfig),
+          clearStaleAmrModelChoiceOnProfileChange(
+            baseConfig,
+            mergeDaemonConfig(baseConfig, daemonConfig),
+          ),
           daemonMediaProvidersLoaded,
         );
         const hasLocalComposioKey = Boolean(next.composio?.apiKey?.trim());
@@ -868,8 +987,18 @@ function AppInner() {
   // avoids racing the local-config initial value against a slow agents
   // probe — by the time this runs, daemonConfig has already overlaid the
   // user's previous choice, so we only fill an empty slot.
+  //
+  // First-run onboarding is the one time we must NOT do this: the onboarding
+  // flow is the sole authority for the initial agent pick (AMR is the
+  // recommended default there), and AMR (vela) detection is asynchronous. If
+  // this fallback fires during onboarding while AMR is still being detected it
+  // snaps the slot to the registry-first *detected* agent (Claude) and
+  // persists it to the daemon, which then races and clobbers the user's AMR
+  // selection on the next launch. Gate on onboardingCompleted so this only
+  // backfills an empty slot for returning users.
   useEffect(() => {
     if (!daemonConfigLoaded || agentsLoading) return;
+    if (config.onboardingCompleted !== true) return;
     if (config.agentId) return;
     const firstAvailable = agents.find((a) => a.available);
     if (!firstAvailable) return;
@@ -880,7 +1009,13 @@ function AppInner() {
       void syncConfigToDaemon(next);
       return next;
     });
-  }, [daemonConfigLoaded, agentsLoading, agents, config.agentId]);
+  }, [
+    daemonConfigLoaded,
+    agentsLoading,
+    agents,
+    config.agentId,
+    config.onboardingCompleted,
+  ]);
 
   // Auto-pick the default design system the same way — only after daemon
   // config has merged so we never overwrite a daemon-stored selection.
@@ -930,6 +1065,12 @@ function AppInner() {
   const refreshProjects = useCallback(async () => {
     const request = beginProjectListRequest();
     const list = await listProjects();
+    reconcileFetchedProjects(list, request);
+  }, [beginProjectListRequest, reconcileFetchedProjects]);
+
+  const refreshProjectsStrict = useCallback(async () => {
+    const request = beginProjectListRequest();
+    const list = await listProjects({ throwOnError: true });
     reconcileFetchedProjects(list, request);
   }, [beginProjectListRequest, reconcileFetchedProjects]);
 
@@ -1008,7 +1149,7 @@ function AppInner() {
             throwOnError: options?.forceMediaProviderSync,
           })
         : Promise.resolve(),
-      syncConfigToDaemon(persisted),
+      syncConfigToDaemon(persisted, { throwOnError: true }),
     ]);
   }, [daemonMediaProviders, daemonMediaProvidersFetchState]);
 
@@ -1033,11 +1174,12 @@ function AppInner() {
 
   const handleModeChange = useCallback(
     (mode: AppConfig['mode']) => {
-      const next = { ...config, mode };
+      const next = { ...latestPersistedConfigRef.current, mode };
+      latestPersistedConfigRef.current = next;
       saveConfig(next);
       setConfig(next);
     },
-    [config],
+    [],
   );
 
   // Quick theme switch from the settings dropdown in the entry view.
@@ -1049,6 +1191,14 @@ function AppInner() {
   const handleThemeChange = useCallback(
     (theme: AppConfig['theme']) => {
       const next = { ...config, theme };
+      // Apply to the DOM synchronously inside the click handler so the theme
+      // flips instantly. Otherwise the visible switch waits on the (heavier)
+      // React re-render of the whole tree before the layout effect re-applies
+      // it — which reads as a perceptible lag after the click.
+      applyAppearanceToDocument({
+        theme: theme ?? 'system',
+        accentColor: config.accentColor,
+      });
       saveConfig(next);
       void syncConfigToDaemon(next);
       setConfig(next);
@@ -1058,28 +1208,31 @@ function AppInner() {
 
   const handleAgentChange = useCallback(
     (agentId: string) => {
-      const next = { ...config, agentId };
+      const next = { ...latestPersistedConfigRef.current, agentId };
+      latestPersistedConfigRef.current = next;
       saveConfig(next);
       void syncConfigToDaemon(next);
       setConfig(next);
     },
-    [config],
+    [],
   );
 
   const handleAgentModelChange = useCallback(
     (agentId: string, choice: { model?: string; reasoning?: string }) => {
-      const prev = config.agentModels?.[agentId] ?? {};
+      const current = latestPersistedConfigRef.current;
+      const prev = current.agentModels?.[agentId] ?? {};
       const merged = { ...prev, ...choice };
       const nextAgentModels = {
-        ...(config.agentModels ?? {}),
+        ...(current.agentModels ?? {}),
         [agentId]: merged,
       };
-      const next = { ...config, agentModels: nextAgentModels };
+      const next = { ...current, agentModels: nextAgentModels };
+      latestPersistedConfigRef.current = next;
       saveConfig(next);
       void syncConfigToDaemon(next);
       setConfig(next);
     },
-    [config],
+    [],
   );
 
   // BYOK protocol switch — also flips `mode` to 'api' so the user does
@@ -1122,7 +1275,10 @@ function AppInner() {
   const refreshAgents = useCallback(
     async (options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] }) => {
       if (options && Object.prototype.hasOwnProperty.call(options, 'agentCliEnv')) {
-        const nextConfig = { ...config, agentCliEnv: options.agentCliEnv ?? {} };
+        const nextConfig = clearStaleAmrModelChoiceOnProfileChange(config, {
+          ...config,
+          agentCliEnv: options.agentCliEnv ?? {},
+        });
         amrModelsRef.current = null;
         saveConfig(nextConfig);
         await syncConfigToDaemon(nextConfig);
@@ -1159,19 +1315,51 @@ function AppInner() {
     [beginAgentStreamRequest, config, isCurrentAgentStreamRequest],
   );
 
+  useEffect(() => {
+    if (!daemonLive || agentsLoading) return;
+
+    const refreshIfDue = () => {
+      if (document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      if (now - agentFocusRefreshLastRunRef.current < AGENT_FOCUS_REFRESH_THROTTLE_MS) return;
+      agentFocusRefreshLastRunRef.current = now;
+      void refreshAgents();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshIfDue();
+    };
+
+    window.addEventListener('focus', refreshIfDue);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', refreshIfDue);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [agentsLoading, daemonLive, refreshAgents]);
+
+  useEffect(() => {
+    const handleAppConfigChanged = () => {
+      void fetchDaemonConfig().then((daemonConfig) => {
+        const next = clearStaleAmrModelChoiceOnProfileChange(
+          latestPersistedConfigRef.current,
+          mergeDaemonConfig(latestPersistedConfigRef.current, daemonConfig),
+        );
+        latestPersistedConfigRef.current = next;
+        saveConfig(next);
+        setConfig(next);
+        amrModelsRef.current = null;
+        restartAmrPolling();
+        void refreshAgents();
+      });
+    };
+    window.addEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
+    return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
+  }, [refreshAgents, restartAmrPolling]);
+
   const handleCreateProject = useCallback(
     async (
-      input: CreateInput & {
-        pendingPrompt?: string;
-        pluginId?: string;
-        appliedPluginSnapshotId?: string;
-        pluginInputs?: Record<string, unknown>;
-        conversationMode?: ChatSessionMode;
-        autoSendFirstMessage?: boolean;
-        requestId?: string;
-        pendingFiles?: File[];
-        userWorkingDirToken?: string;
-      },
+      input: AppCreateProjectInput,
     ): Promise<boolean> => {
       // Honor an explicit `null` design system — the create panel defaults
       // to "None" for every kind now, and the user expects that to land
@@ -1185,19 +1373,42 @@ function AppInner() {
       const fidelity = fidelityToTracking(input.metadata?.fidelity ?? null);
       const creationSource: 'blank' | 'template' | 'zip' | 'folder' =
         kind === 'template' ? 'template' : 'blank';
-      const result = await createProject({
-        name: input.name,
-        skillId: input.skillId,
-        designSystemId: input.designSystemId,
-        pendingPrompt: derivedPendingPrompt,
-        metadata: input.metadata,
-        ...(input.conversationMode ? { conversationMode: input.conversationMode } : {}),
-        ...(input.pluginId ? { pluginId: input.pluginId } : {}),
-        ...(input.appliedPluginSnapshotId
-          ? { appliedPluginSnapshotId: input.appliedPluginSnapshotId }
-          : {}),
-        ...(input.pluginInputs ? { pluginInputs: input.pluginInputs } : {}),
-      });
+      let result;
+      try {
+        result = await createProject({
+          name: input.name,
+          skillId: input.skillId,
+          designSystemId: input.designSystemId,
+          pendingPrompt: derivedPendingPrompt,
+          metadata: input.metadata,
+          ...(input.conversationMode ? { conversationMode: input.conversationMode } : {}),
+          ...(input.pluginId ? { pluginId: input.pluginId } : {}),
+          ...(input.appliedPluginSnapshotId
+            ? { appliedPluginSnapshotId: input.appliedPluginSnapshotId }
+            : {}),
+          ...(input.pluginInputs ? { pluginInputs: input.pluginInputs } : {}),
+        });
+      } catch (err) {
+        const errorCode =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'CREATE_REQUEST_FAILED';
+        trackProjectCreateResult(
+          analytics.track,
+          {
+            page_name: 'home',
+            area: 'new_project',
+            project_source: 'create_button',
+            project_id: null,
+            project_kind: projectKindFromMetadataToTracking(input.metadata),
+            fidelity,
+            result: 'failed',
+            error_code: errorCode,
+          },
+          { requestId: input.requestId },
+        );
+        throw err;
+      }
       if (!result) {
         trackProjectCreateResult(
           analytics.track,
@@ -1206,8 +1417,10 @@ function AppInner() {
             area: 'new_project',
             project_source: 'create_button',
             project_id: null,
-            project_kind: projectKindToTracking(kind),
+            project_kind: projectKindFromMetadataToTracking(input.metadata),
             fidelity,
+            ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
+            ...(input.pluginType ? { plugin_type: input.pluginType } : {}),
             result: 'failed',
             error_code: 'CREATE_REQUEST_FAILED',
           },
@@ -1284,8 +1497,10 @@ function AppInner() {
           area: 'new_project',
           project_source: 'create_button',
           project_id: result.project.id,
-          project_kind: projectKindToTracking(kind),
+          project_kind: projectKindFromMetadataToTracking(input.metadata),
           fidelity,
+          ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
+          ...(input.pluginType ? { plugin_type: input.pluginType } : {}),
           result: 'success',
         },
         { requestId: input.requestId },
@@ -1343,6 +1558,84 @@ function AppInner() {
       return true;
     },
     [analytics.track, rememberLocalProject],
+  );
+
+  const handleCreateProjectFromDesignSystem = useCallback(
+    async (designSystemId: string, designSystemTitle: string) => {
+      // "Create with this design system" must NOT assume a prototype. Route
+      // the click through the hidden default design router (od-default) —
+      // exactly like a free-form Home prompt — so the agent first asks (via
+      // the task-type question-form) what to build with this system instead
+      // of silently binding the web-prototype scenario + high-fidelity
+      // metadata. The preset prompt seeds the conversation and is auto-sent
+      // so the router surfaces the confirmation form immediately; `kind`
+      // stays the neutral 'other' so no surface-specific default leaks back
+      // in on the daemon side.
+      const presetPrompt = t('nextStep.brandCreateDesignPrompt', {
+        designSystem: designSystemTitle,
+      });
+      await handleCreateProject({
+        name: t('common.untitled'),
+        skillId: null,
+        designSystemId,
+        pluginId: DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID,
+        pluginInputs: { prompt: presetPrompt },
+        pendingPrompt: presetPrompt,
+        autoSendFirstMessage: true,
+        conversationMode: 'design',
+        metadata: {
+          kind: 'other',
+          nameSource: 'generated',
+        },
+      });
+    },
+    [handleCreateProject, t],
+  );
+
+  const handleCreateDesignSystemFromProject = useCallback(
+    async (
+      sourceProjectId: string,
+      input: { name?: string; pendingPrompt?: string },
+    ) => {
+      const result = await createDesignSystemProjectFromProject(sourceProjectId, input);
+      try {
+        window.sessionStorage.setItem(`od:auto-send-first:${result.project.id}`, '1');
+      } catch {
+        // If sessionStorage is unavailable, the project still opens with the
+        // pending prompt ready for the user to send manually.
+      }
+      rememberLocalProject(result.project.id);
+      setProjects((curr) => [
+        result.project,
+        ...curr.filter((p) => p.id !== result.project.id),
+      ]);
+      void refreshDesignSystems();
+      navigate({
+        kind: 'project',
+        projectId: result.project.id,
+        conversationId: result.conversationId,
+        fileName: null,
+      });
+    },
+    [refreshDesignSystems, rememberLocalProject],
+  );
+
+  const handleDuplicateProject = useCallback(
+    async (sourceProjectId: string, input: { name?: string } = {}) => {
+      const result = await duplicateProject(sourceProjectId, input);
+      rememberLocalProject(result.project.id);
+      setProjects((curr) => [
+        result.project,
+        ...curr.filter((p) => p.id !== result.project.id),
+      ]);
+      navigate({
+        kind: 'project',
+        projectId: result.project.id,
+        conversationId: result.conversationId,
+        fileName: null,
+      });
+    },
+    [rememberLocalProject],
   );
 
   const handleCreatePluginShareProject = useCallback(
@@ -1456,9 +1749,37 @@ function AppInner() {
     });
   }, [beginProjectListRequest, rememberLocalProject, reconcileFetchedProjects]);
 
-  const handleOpenProject = useCallback((id: string) => {
-    navigate({ kind: 'project', projectId: id, fileName: null });
-  }, []);
+  const handleOpenProject = useCallback(async (id: string, fileName?: string): Promise<boolean> => {
+    const routeFileName = fileName ?? null;
+    if (projectsRef.current.some((project) => project.id === id)) {
+      navigate({ kind: 'project', projectId: id, fileName: routeFileName });
+      return true;
+    }
+    try {
+      const project = await getProject(id);
+      if (project) {
+        setProjects((curr) => [project, ...curr.filter((candidate) => candidate.id !== project.id)]);
+        navigate({ kind: 'project', projectId: id, fileName: routeFileName });
+        return true;
+      }
+      const request = beginProjectListRequest();
+      const list = await listProjects();
+      reconcileFetchedProjects(list, request);
+      const fetchedProject = locallyDeletedProjectIdsRef.current.has(id)
+        ? undefined
+        : list.find((candidate) => candidate.id === id);
+      if (fetchedProject) {
+        navigate({ kind: 'project', projectId: id, fileName: routeFileName });
+        return true;
+      }
+    } catch {
+      // Fall through to the same visible missing-project state. The daemon can
+      // return 404 or transiently fail while reconciling a deleted backing
+      // project; either way the user needs feedback instead of a silent bounce.
+    }
+    setProjectOpenError(t('project.missing'));
+    return false;
+  }, [beginProjectListRequest, reconcileFetchedProjects, t]);
 
   useEffect(() => {
     if (!config.pet?.enabled || !daemonLive) {
@@ -1511,8 +1832,12 @@ function AppInner() {
     void patchProject(id, { name: trimmed });
   }, []);
 
+  // Return to wherever the user opened this project from (Projects, Tasks, a
+  // design system, …) by popping the history stack. Falls back to the Projects
+  // list only when there is no in-app history behind us (a deep link / fresh
+  // load straight onto the project URL) — see `goBack`.
   const handleBack = useCallback(() => {
-    navigate({ kind: 'home', view: 'projects' });
+    goBack({ kind: 'home', view: 'projects' });
   }, []);
 
   const handleClearPendingPrompt = useCallback(() => {
@@ -1560,12 +1885,7 @@ function AppInner() {
   // Settings → Design Systems call back through these handlers after
   // every successful mutation; we drop any pool entry whose project
   // depends on the affected id — active or parked — so the next mount
-  // recomposes the system prompt with the new body. A ref tracks
-  // projects so the callback is stable across renders.
-  const projectsRef = useRef<Project[]>(projects);
-  useEffect(() => {
-    projectsRef.current = projects;
-  }, [projects]);
+  // recomposes the system prompt with the new body.
 
   const handleSkillsChanged = useCallback(
     (affectedSkillId?: string) => {
@@ -1619,22 +1939,35 @@ function AppInner() {
     });
   }, []);
 
-  const activeProject =
+  const loadedActiveProject =
     route.kind === 'project'
       ? (projects.find((p) => p.id === route.projectId) ?? null)
       : null;
+  const routeProjectPlaceholder = useMemo<Project | null>(() => {
+    if (route.kind !== 'project') return null;
+    const now = Date.now();
+    return {
+      id: route.projectId,
+      name: 'Untitled',
+      skillId: null,
+      designSystemId: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }, [route]);
+  const activeProject = loadedActiveProject ?? routeProjectPlaceholder;
 
   // Deep-linked route to a project we don't have yet (e.g. after a refresh
   // that finishes after the project list comes back). Fetch it in the
   // background so the view can render rather than bouncing to home.
   useEffect(() => {
     if (route.kind !== 'project') return;
-    if (activeProject) return;
+    if (loadedActiveProject) return;
     if (!projects.length && !daemonLive) return;
     if (projects.some((p) => p.id === route.projectId)) return;
     let cancelled = false;
     (async () => {
-      const project = await getProject(route.projectId);
+      const project = await getProject(route.projectId).catch(() => null);
       if (cancelled) return;
       if (project) {
         setProjects((curr) => {
@@ -1647,7 +1980,7 @@ function AppInner() {
         return;
       }
       const request = beginProjectListRequest();
-      const list = await listProjects();
+      const list = await listProjects().catch(() => []);
       if (cancelled) return;
       const applied = reconcileFetchedProjects(list, request);
       if (!applied) return;
@@ -1658,13 +1991,14 @@ function AppInner() {
       const knownLocalProject =
         staleRequest && pendingLocalProjectIdsRef.current.has(route.projectId);
       if (!fetchedProject && !knownLocalProject) {
+        setProjectOpenError(t('project.missing'));
         navigate({ kind: 'home', view: 'home' }, { replace: true });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [route, activeProject, projects, daemonLive, beginProjectListRequest, reconcileFetchedProjects]);
+  }, [route, loadedActiveProject, projects, daemonLive, beginProjectListRequest, reconcileFetchedProjects, t]);
 
   const openSettings = useCallback((
     section: SettingsSection = 'execution',
@@ -1792,10 +2126,15 @@ function AppInner() {
   // a fresh template list. The template store is global — if they just
   // saved a template inside a project, returning home should reflect it
   // immediately in the From-template tab without forcing a page reload.
+  // Same rationale for design systems: a brand extraction (or any in-project
+  // design-system creation) registers a `user:<id>` system out of band, so the
+  // Design systems tab must re-fetch to show it — and the brand-ready prompt
+  // relies on the new system being present so it can preselect it.
   useEffect(() => {
     if (route.kind !== 'home') return;
     void refreshTemplates();
-  }, [route.kind, refreshTemplates]);
+    void refreshDesignSystems();
+  }, [route.kind, refreshTemplates, refreshDesignSystems]);
 
   // Existing card grids (DesignsTab, ProjectView), pickers (NewProjectPanel,
   // ChatComposer mention) all look skills up by id without caring whether
@@ -1847,7 +2186,18 @@ function AppInner() {
   // EntryView / ProjectView split so the discovery surface stays
   // independent of any active project.
   let appMain: ReactNode;
-  if (route.kind === 'marketplace') {
+  const pendingFirstRunOnboardingRoute =
+    route.kind === 'home' &&
+    route.view === 'home' &&
+    config.onboardingCompleted !== true &&
+    !daemonConfigLoaded;
+  if (pendingFirstRunOnboardingRoute) {
+    appMain = (
+      <div className="entry-shell entry-shell--no-header">
+        <CenteredLoader label={t('entry.loadingWorkspace')} />
+      </div>
+    );
+  } else if (route.kind === 'marketplace') {
     appMain = <MarketplaceView />;
   } else if (route.kind === 'marketplace-detail') {
     appMain = <PluginDetailView pluginId={route.pluginId} />;
@@ -1855,14 +2205,15 @@ function AppInner() {
     appMain = (
       <DesignSystemCreationFlow
         onBack={() => navigate({ kind: 'home', view: 'design-systems' })}
-        onCreated={(projectId, project) => {
+        designSystems={enabledDS}
+        onCreated={(projectId, project, conversationId) => {
           if (project) {
             setProjects((curr) => [
               project,
               ...curr.filter((p) => p.id !== project.id),
             ]);
           }
-          navigate({ kind: 'project', projectId, conversationId: null, fileName: null });
+          navigate({ kind: 'project', projectId, conversationId: conversationId ?? null, fileName: null });
         }}
         onProjectPrepared={(project) => {
           setProjects((curr) => [
@@ -1883,7 +2234,7 @@ function AppInner() {
         config={config}
         agents={agents}
         onBack={() => navigate({ kind: 'home', view: 'design-systems' })}
-        onOpenProject={(projectId) => navigate({ kind: 'project', projectId, conversationId: null, fileName: null })}
+        onOpenProject={(projectId) => void handleOpenProject(projectId)}
         onSetDefault={handleChangeDefaultDesignSystem}
         onSystemsRefresh={refreshDesignSystems}
         onProjectsRefresh={refreshProjects}
@@ -1909,6 +2260,7 @@ function AppInner() {
         onModeChange={handleModeChange}
         onAgentChange={handleAgentChange}
         onAgentModelChange={handleAgentModelChange}
+        onApiModelChange={handleApiModelChange}
         onRefreshAgents={refreshAgents}
         onThemeChange={handleThemeChange}
         onOpenSettings={openSettings}
@@ -1924,8 +2276,12 @@ function AppInner() {
         onTouchProject={handleTouchProject}
         onProjectChange={handleProjectChange}
         onProjectsRefresh={refreshProjects}
+        onDeleteProject={handleDeleteProject}
         onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
         onDesignSystemsRefresh={refreshDesignSystems}
+        onCreateProjectFromDesignSystem={handleCreateProjectFromDesignSystem}
+        onCreateDesignSystemFromProject={handleCreateDesignSystemFromProject}
+        onDuplicateProject={handleDuplicateProject}
       />
     );
   } else {
@@ -1940,6 +2296,7 @@ function AppInner() {
         promptTemplates={promptTemplates}
         defaultDesignSystemId={config.designSystemId}
         agents={agents}
+        agentsLoading={agentsLoading}
         config={config}
         providerModelsCache={providerModelsCache}
         onProviderModelsCacheChange={setProviderModelsCache}
@@ -1952,6 +2309,8 @@ function AppInner() {
         onApiProtocolChange={handleApiProtocolChange}
         onApiModelChange={handleApiModelChange}
         onConfigPersist={handleConfigPersist}
+        onSkillsRefresh={refreshSkills}
+        onSkillsChanged={handleSkillsChanged}
         onRefreshAgents={refreshAgents}
         onThemeChange={handleThemeChange}
         skillsLoading={skillsLoading}
@@ -1966,9 +2325,14 @@ function AppInner() {
         onOpenProject={handleOpenProject}
         onOpenLiveArtifact={handleOpenLiveArtifact}
         onDeleteProject={handleDeleteProject}
+        onDuplicateProject={handleDuplicateProject}
         onRenameProject={handleRenameProject}
+        onProjectsRefresh={refreshProjectsStrict}
         onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
-        onCreateDesignSystem={() => navigate({ kind: 'design-system-create' })}
+        onCreateDesignSystem={() => {
+          setPendingDesignSystemCreateEntry('design_systems_page');
+          navigate({ kind: 'design-system-create' });
+        }}
         onOpenDesignSystem={(id: string) => navigate({ kind: 'design-system-detail', designSystemId: id })}
         onDesignSystemsRefresh={refreshDesignSystems}
         onPersistComposioKey={handleConfigPersistComposioKey}
@@ -1986,6 +2350,7 @@ function AppInner() {
         <WorkspaceTabsBar
           route={route}
           projects={projects}
+          onboardingCompleted={config.onboardingCompleted === true}
         />
         <div className="workspace-shell__body">
           {appMain}
@@ -2031,7 +2396,6 @@ function AppInner() {
           }}
           onRefreshAgents={refreshAgents}
           onAmrLoginStatusChange={handleAmrLoginStatusChange}
-          onSkillsRefresh={refreshSkills}
           daemonMediaProviders={daemonMediaProviders}
           daemonMediaProvidersFetchState={daemonMediaProvidersFetchState}
           mediaProvidersNotice={mediaProvidersNotice}
@@ -2051,6 +2415,14 @@ function AppInner() {
           message={workingDirError}
           role="alert"
           onDismiss={() => setWorkingDirError(null)}
+        />
+      ) : null}
+      {projectOpenError ? (
+        <Toast
+          message={projectOpenError}
+          role="alert"
+          tone="error"
+          onDismiss={() => setProjectOpenError(null)}
         />
       ) : null}
       {/* First-run privacy consent banner. It waits for daemon config
@@ -2082,7 +2454,7 @@ function AppInner() {
               ...latestPersistedConfigRef.current,
               installationId,
               privacyDecisionAt: Date.now(),
-              telemetry: { metrics: true, content: true, artifactManifest: false },
+              telemetry: { metrics: true, content: true },
             });
           }}
         />

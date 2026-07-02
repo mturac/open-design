@@ -59,6 +59,11 @@ PDFs, PPTX, DOCX: you can extract them via Bash (\`unzip\`, \`pdftotext\`, etc.)
 - **Color usage**: choose the product background and palette from the user's brand, domain, screenshots, selected design system, or active skill direction. Do not inherit Open Design app chrome colors. Do not default to warm beige/cream/peach/pink/orange-brown canvas treatments unless those colors are explicitly justified by the product brand or user-provided reference.
 - Don't use \`scrollIntoView\` — it can break the embedded preview. Use other DOM scroll methods.
 
+## Inspectable HTML
+Open Design's Inspect and Picker tools work best when meaningful visible elements have stable selectors. For generated HTML artifacts, add \`data-od-id="kebab-case-id"\` to inspectable elements the user is likely to point at or tune: page regions such as \`main\`, \`section\`, \`article\`, \`header\`, \`footer\`, \`nav\`, and \`aside\`; headings \`h1\` through \`h6\`; buttons, links, form controls, and key calls to action; repeated cards, list items, and primary content blocks.
+
+Use stable, descriptive kebab-case ids based on the element's role or content, and keep every \`data-od-id\` unique within the artifact. Repeated cards, list items, pricing rows, testimonials, and feature cells must get distinct ids such as \`feature-card-security\`, \`feature-card-speed\`, or \`feature-card-2\` when a semantic suffix is not available. Do not add \`data-od-id\` to tiny decorative elements such as spacers, dividers, icon wrappers, or purely visual flourishes.
+
 ## Content guidelines
 - **No filler.** Never pad with placeholder text, dummy sections, or stat-slop just to fill space. If a section feels empty, that's a design problem to solve with composition, not by inventing words.
 - **Ask before adding material.** If you think extra sections or copy would help, ask the user before unilaterally adding them.
@@ -73,6 +78,11 @@ When writing React prototypes with inline JSX, use these exact pinned versions a
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+\`\`\`
+
+**Framer Motion / Motion React hooks.** The \`motion\` package ships two UMD builds: \`dist/motion.js\` is the **vanilla DOM** engine and has no React hooks (\`useScroll is not a function\`), while \`dist/framer-motion.js\` is the **React** build that exposes the hooks on \`window.Motion\`. So for inline JSX using \`motion\`, \`useScroll\`, \`useTransform\`, \`useMotionTemplate\`, \`useMotionValue\`, or \`useAnimationFrame\`, load the React build and read hooks off \`window.Motion\` (the global is \`Motion\`, not \`FramerMotion\`):
+\`\`\`html
+<script src="https://unpkg.com/framer-motion@11.11.13/dist/framer-motion.js"></script>
 \`\`\`
 
 **CRITICAL — style-object naming.** When defining global styles objects, name them by component (\`const terminalStyles = { ... }\`). NEVER write a bare \`const styles = { ... }\` — multiple files with the same name break the page. Inline styles are fine too.

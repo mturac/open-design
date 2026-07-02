@@ -60,10 +60,13 @@ export const SUGGESTED_MODELS_BY_PROTOCOL: Record<ApiProtocol, readonly string[]
     'gpt-4o-mini',
   ],
   google: [
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-pro',
-    'gemini-1.5-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-pro-preview',
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
   ],
   senseaudio: [
     // SenseAudio is an OpenAI-compatible gateway that fronts both its own
@@ -98,6 +101,14 @@ export const SUGGESTED_MODELS_BY_PROTOCOL: Record<ApiProtocol, readonly string[]
     'gemini-2.0-flash',
     'deepseek-chat',
     'deepseek-reasoner',
+  ],
+  bedrock: [
+    'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    'anthropic.claude-3-5-haiku-20241022-v1:0',
+    'anthropic.claude-3-haiku-20240307-v1:0',
+    'amazon.nova-pro-v1:0',
+    'amazon.nova-lite-v1:0',
+    'amazon.nova-micro-v1:0',
   ],
   ollama: [
     'cogito-2.1:671b',
@@ -150,7 +161,7 @@ export const FAST_MODEL_BY_PROTOCOL: Record<ApiProtocol, string> = {
   anthropic: 'claude-haiku-4-5',
   openai: 'gpt-4o-mini',
   azure: 'gpt-4o-mini',
-  google: 'gemini-2.0-flash',
+  google: 'gemini-3.5-flash',
   // Ollama Cloud doesn't have a clean "fast small model" default that
   // works for the LLM memory extractor — the catalog skews to large
   // open-weight checkpoints. Fall back to a small Gemma so the auto-
@@ -159,6 +170,7 @@ export const FAST_MODEL_BY_PROTOCOL: Record<ApiProtocol, string> = {
   ollama: 'gemma3:4b',
   senseaudio: 'senseaudio-s2-flash',
   aihubmix: 'gpt-4o-mini',
+  bedrock: 'amazon.nova-lite-v1:0',
 };
 
 export const API_PROTOCOL_TABS: ReadonlyArray<{
@@ -182,16 +194,18 @@ export const API_PROTOCOL_LABELS: Record<ApiProtocol, string> = {
   ollama: 'Ollama Cloud API',
   senseaudio: 'SenseAudio API',
   aihubmix: 'AIHubMix API',
+  bedrock: 'AWS Bedrock',
 };
 
 export const API_KEY_PLACEHOLDERS: Record<ApiProtocol, string> = {
   anthropic: 'sk-ant-...',
   openai: 'sk-...',
   azure: 'azure key',
-  google: 'AIza...',
+  google: 'AIza... or AQ....',
   ollama: 'Ollama API key',
   senseaudio: 'SenseAudio API key',
   aihubmix: 'sk-...',
+  bedrock: 'AWS credentials',
 };
 
 // Default base URL the daemon assumes when the user leaves the field
@@ -205,6 +219,7 @@ export const DEFAULT_BASE_URL_BY_PROTOCOL: Record<ApiProtocol, string> = {
   ollama: 'https://ollama.com',
   senseaudio: 'https://api.senseaudio.cn',
   aihubmix: 'https://aihubmix.com/v1',
+  bedrock: 'https://bedrock-runtime.us-east-1.amazonaws.com',
 };
 
 // Fixed-origin gateways: managed single-endpoint providers where the user only

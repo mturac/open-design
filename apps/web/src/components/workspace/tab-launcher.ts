@@ -41,6 +41,12 @@ export interface LauncherContext {
    * round-trip — so it returns void and creates/focuses the tab itself.
    */
   createBrowser?: () => void;
+  /** Create a new sketch in the current Design Files directory. */
+  createSketch?: () => void;
+  /** Create a new Markdown document in the current Design Files directory. */
+  createDocument?: () => void;
+  /** Open the Design Files upload picker. */
+  uploadDesignFiles?: () => void;
 }
 
 export interface LauncherAction {
@@ -56,6 +62,8 @@ export interface LauncherAction {
   run: (ctx: LauncherContext) => void;
 }
 
+const ENABLE_TERMINAL_WORKSPACE_ENTRYPOINT = false;
+
 /**
  * Build the list of "create new" actions for the current context.
  *
@@ -66,7 +74,7 @@ export interface LauncherAction {
  */
 export function buildLauncherActions(ctx: LauncherContext): LauncherAction[] {
   const actions: LauncherAction[] = [];
-  if (ctx.createTerminal) {
+  if (ENABLE_TERMINAL_WORKSPACE_ENTRYPOINT && ctx.createTerminal) {
     actions.push({
       id: 'new-terminal',
       iconName: 'terminal',
@@ -89,6 +97,39 @@ export function buildLauncherActions(ctx: LauncherContext): LauncherAction[] {
       // id to thread through openTab here.
       run: (runCtx) => {
         runCtx.createBrowser?.();
+      },
+    });
+  }
+  if (ctx.createSketch) {
+    actions.push({
+      id: 'new-sketch',
+      iconName: 'pencil',
+      labelKey: 'designFiles.newSketch',
+      descriptionKey: 'workspace.newSketchDescription',
+      run: (runCtx) => {
+        runCtx.createSketch?.();
+      },
+    });
+  }
+  if (ctx.createDocument) {
+    actions.push({
+      id: 'create-document',
+      iconName: 'file',
+      labelKey: 'designFiles.paste.label',
+      descriptionKey: 'designFiles.paste.title',
+      run: (runCtx) => {
+        runCtx.createDocument?.();
+      },
+    });
+  }
+  if (ctx.uploadDesignFiles) {
+    actions.push({
+      id: 'upload-design-files',
+      iconName: 'upload',
+      labelKey: 'designFiles.upload.label',
+      descriptionKey: 'designFiles.upload.title',
+      run: (runCtx) => {
+        runCtx.uploadDesignFiles?.();
       },
     });
   }

@@ -1,5 +1,5 @@
 import { Fragment, memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ToolCard, StreamingAskUserQuestionCard, isAskUserQuestionName } from "./ToolCard";
+import { ToolCard } from "./ToolCard";
 import { FileOpsSummary } from "./FileOpsSummary";
 import {
   renderMarkdown,
@@ -7,7 +7,6 @@ import {
 } from "../runtime/markdown";
 import { asInProjectFilePath } from "../runtime/in-project-link";
 import { projectFileUrl } from "../providers/registry";
-import { submitChatRunToolResult } from "../providers/daemon";
 import { useAnalytics } from "../analytics/provider";
 import {
   trackAssistantFeedbackButtonClick,
@@ -33,18 +32,30 @@ import {
   stripTrailingOpenQuestionForm,
   type QuestionForm,
 } from "../artifacts/question-form";
+import {
+  hasOdCard,
+  splitOnOdCards,
+  stripTrailingOpenOdCard,
+  type ChatSessionMode,
+  type OdCard,
+  type OdCardBrandBrowserAssist,
+} from "@open-design/contracts";
+import { OdCardView, type BrandBrowserAssistConfirm } from "./OdCard";
 import { parseSubmittedAnswers } from "./QuestionForm";
-import { splitStreamingArtifact, stripArtifact } from "../artifacts/strip";
+import { splitStreamingArtifact, stripArtifact, stripRecoveredHtmlFallbackForDisplay } from "../artifacts/strip";
+import { BRAND_BROWSER_TAB_ID } from "../runtime/brand-browser-bridge";
 import {
   getPluginFolderCandidates,
   type PluginFolderCandidate,
 } from "./design-files/pluginFolders";
 import type { PluginFolderAgentAction } from "./design-files/pluginFolderActions";
 import { Icon } from "./Icon";
-import { NextStepActions } from "./NextStepActions";
+import { NextStepActions, type NextStepActionsVariant } from "./NextStepActions";
+import type { DesignToolboxActionId } from "../runtime/design-toolbox";
 import { copyToClipboard } from "../lib/copy-to-clipboard";
 import { useT } from "../i18n";
 import { deriveFileOps, type FileOpEntry } from "../runtime/file-ops";
+import { dedupeToolUsesById } from "../runtime/tool-events";
 import {
   isTodoWriteToolName,
   unfinishedTodosFromEvents,
@@ -53,11 +64,6 @@ import {
 import type { Dict } from "../i18n/types";
 import { agentDisplayName, agentIconId, exactAgentDisplayName } from "../utils/agentLabels";
 import { AgentIcon } from "./AgentIcon";
-import {
-  exactDateTime,
-  messageTime,
-  relativeTimeLong,
-} from "../utils/chatTime";
 import { filterImplicitProducedFiles } from "../produced-files";
 import type {
   AgentEvent,
@@ -66,6 +72,8 @@ import type {
   ChatMessageFeedbackRating,
   ChatMessageFeedbackReasonCode,
   ProjectFile,
+  ProjectMetadata,
+  SkillSummary,
 } from "../types";
 
 type TranslateFn = (
@@ -101,6 +109,47 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function isBrandExtractionNextStepVariant(variant: NextStepActionsVariant): boolean {
+  return (
+    variant === 'brand-extraction' ||
+    variant === 'brand-extraction-incomplete' ||
+    variant === 'brand-programmatic-incomplete'
+  );
+}
+
+function textNeedsBrandBrowserAssistFallback(content: string): boolean {
+  if (!content.trim() || hasOdCard(content)) return false;
+  return (
+    /browser assist card|browser assist/i.test(content) ||
+    /浏览器辅助卡片|瀏覽器輔助卡片/.test(content) ||
+    /More\s*>\s*Download Page/i.test(content) ||
+    /More\s*>\s*(下载页面|下載頁面)/.test(content)
+  );
+}
+
+function buildBrandBrowserAssistFallbackCard({
+  content,
+  metadata,
+  nextStepVariant,
+}: {
+  content: string;
+  metadata?: ProjectMetadata;
+  nextStepVariant: NextStepActionsVariant;
+}): OdCardBrandBrowserAssist | null {
+  if (!isBrandExtractionNextStepVariant(nextStepVariant)) return null;
+  if (!textNeedsBrandBrowserAssistFallback(content)) return null;
+  const brandId = metadata?.brandId?.trim();
+  if (!brandId) return null;
+  const url = metadata?.brandSourceUrl?.trim();
+  return {
+    kind: 'brand-browser-assist',
+    brandId,
+    browserTabId: BRAND_BROWSER_TAB_ID,
+    ...(url ? { url } : {}),
+    reason: 'Browser',
+  };
+}
+
 function ActionNoticeView({ notice }: { notice: ActionNotice | null }) {
   if (!notice) return null;
   return (
@@ -123,16 +172,14 @@ type SkillPluginCandidateBlock = Extract<Block, { kind: "plugin-candidate" }>;
 function SkillPluginCandidateCard({
   block,
   projectId,
-  onDismissed,
   onRequestOpenFile,
 }: {
   block: SkillPluginCandidateBlock;
-  projectId: string | null;
-  onDismissed: (candidateId: string) => void;
+  projectId?: string | null;
   onRequestOpenFile?: (name: string) => void;
 }) {
   const t = useT();
-  const [busy, setBusy] = useState<null | "draft" | "publish" | "contribute" | "dismiss">(null);
+  const [busy, setBusy] = useState<null | "draft" | "contribute">(null);
   const [notice, setNotice] = useState<ActionNotice | null>(null);
   const disabled = !projectId || busy !== null;
   const description =
@@ -193,9 +240,9 @@ function SkillPluginCandidateCard({
     }
   }
 
-  async function share(action: "publish-github" | "contribute-open-design") {
+  async function share(action: "contribute-open-design") {
     if (!projectId) return;
-    setBusy(action === "publish-github" ? "publish" : "contribute");
+    setBusy("contribute");
     setNotice(null);
     try {
       const data = await post(
@@ -203,28 +250,11 @@ function SkillPluginCandidateCard({
         { action },
       );
       setNotice({
-        message:
-          action === "publish-github"
-            ? `GitHub publish task started for ${data?.path ?? "the draft"}.`
-            : `Open Design contribution task started for ${data?.path ?? "the draft"}.`,
+        message: `Open Design contribution task started for ${data?.path ?? "the draft"}.`,
       });
     } catch (err) {
       setNotice({ message: err instanceof Error ? err.message : String(err) });
     } finally {
-      setBusy(null);
-    }
-  }
-
-  async function dismiss() {
-    if (!projectId) return;
-    setBusy("dismiss");
-    try {
-      await post(
-        `/api/projects/${encodeURIComponent(projectId)}/plugin-candidates/${encodeURIComponent(block.candidateId)}/dismiss`,
-      );
-      onDismissed(block.candidateId);
-    } catch (err) {
-      setNotice({ message: err instanceof Error ? err.message : String(err) });
       setBusy(null);
     }
   }
@@ -245,15 +275,6 @@ function SkillPluginCandidateCard({
               type="button"
               className="plugin-action-button plugin-action-button--primary"
               disabled={disabled}
-              onClick={() => void createDraft()}
-            >
-              <Icon name={busy === "draft" ? "spinner" : "plus"} size={13} />
-              <span>{busy === "draft" ? "Creating..." : t("skillPluginCandidate.createForMe")}</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-action-button"
-              disabled={disabled}
               onClick={() => void share("contribute-open-design")}
             >
               <Icon name={busy === "contribute" ? "spinner" : "share"} size={13} />
@@ -263,19 +284,10 @@ function SkillPluginCandidateCard({
               type="button"
               className="plugin-action-button"
               disabled={disabled}
-              onClick={() => void share("publish-github")}
+              onClick={() => void createDraft()}
             >
-              <Icon name={busy === "publish" ? "spinner" : "github"} size={13} />
-              <span>{busy === "publish" ? "Starting..." : t("skillPluginCandidate.publishRepo")}</span>
-            </button>
-            <button
-              type="button"
-              className="plugin-action-button"
-              disabled={disabled}
-              onClick={() => void dismiss()}
-            >
-              <Icon name={busy === "dismiss" ? "spinner" : "close"} size={13} />
-              <span>{t("skillPluginCandidate.dismiss")}</span>
+              <Icon name={busy === "draft" ? "spinner" : "plus"} size={13} />
+              <span>{busy === "draft" ? "Creating..." : t("skillPluginCandidate.createForMe")}</span>
             </button>
           </div>
           {notice ? (
@@ -297,24 +309,34 @@ interface Props {
   // in-flight Write/Edit's code in real time before the full `tool_use`
   // arrives. Never persisted.
   liveToolInput?: Record<string, { name: string; text: string; seq?: number }>;
-  projectId: string | null;
+  // ChatPane renders the canonical conversation-level TodoWrite card as its
+  // own row, while this message strips TodoWrite tool groups to avoid a
+  // duplicate per-message card.
+  showConversationTodoCard?: boolean;
+  conversationTodoInput?: unknown | null;
+  projectId?: string | null;
   // Analytics context for the assistant_feedback_* events. Defaults
   // applied at the call site keep AssistantMessage usable in tests
   // that don't care about telemetry.
   projectKind?: TrackingProjectKind | null;
   conversationId?: string | null;
   projectFiles?: ProjectFile[];
+  projectMetadata?: ProjectMetadata;
   projectFileNames?: Set<string>;
   onRequestOpenFile?: (name: string) => void;
+  // Client-side action for a <od-card type="brand-browser-assist"> button: open
+  // or focus the Browser tab so the user can clear verification. Excluded from
+  // the memo comparison (routed through ChatPane's stable callbacks ref).
+  onBrandBrowserAssistConfirm?: BrandBrowserAssistConfirm;
   onRequestPluginFolderAgentAction?: (
     relativePath: string,
     action: PluginFolderAgentAction,
   ) => Promise<{ message?: string; url?: string } | void> | { message?: string; url?: string } | void;
   activePluginActionPaths?: Set<string>;
   hiddenPluginActionPaths?: Set<string>;
-  // Click handler for the "Share to Open Design" button rendered next to
-  // the post-completion Discord prompt. ProjectView wires this to
-  // handleSend with the bundled `od-share-to-community` trigger prompt.
+  // Click handler for the post-completion "Share to Open Design" submission
+  // action. ProjectView wires this to handleSend with the bundled
+  // `od-share-to-community` trigger prompt.
   onShareToOpenDesign?: () => void;
   shareToOpenDesignBusy?: boolean;
   // True only for the most recent assistant message.
@@ -327,9 +349,6 @@ interface Props {
   // Kept for ChatPane compatibility; chat-side question forms now always
   // render as a compact Questions banner.
   nextUserContent?: string;
-  // Submit handler the form fires when the user picks answers — opaque
-  // to AssistantMessage; ProjectView wires it into onSend.
-  onSubmitForm?: (text: string) => void;
   // Open the right-hand Questions tab. The active discovery form renders
   // there (Claude-Design style) instead of inline; this assistant message
   // shows a banner that focuses the tab on click.
@@ -340,17 +359,38 @@ interface Props {
   onFeedback?: (change: ChatMessageFeedbackChange) => void;
   suppressDirectionForms?: boolean;
   hasDesignSystemContext?: boolean;
-  // "Next step" affordance handlers, surfaced under the last assistant message
-  // once it has produced a previewable (HTML) artifact. Omitting them hides
-  // the affordance entirely (e.g. in tests that don't wire chat send).
+  // "Next step" affordance handlers, surfaced under the latest settled
+  // assistant message. Omitting them hides the affordance entirely (e.g. in
+  // tests that don't wire chat send).
   onArtifactShare?: (fileName: string) => void;
-  onArtifactChip?: (fileName: string, prompt: string) => void;
+  // Featured design-toolbox follow-up rows on the "next step" card. Seeding the
+  // composer with an action / opening the toolbox both route through the
+  // composer; see ChatPane's composer ref wiring.
+  onToolboxAction?: (id: DesignToolboxActionId) => void;
+  onNextStepPromptAction?: (
+    prompt: string,
+    options?: { sessionMode?: ChatSessionMode },
+  ) => void;
+  onNextStepAiOptimize?: () => void;
+  nextStepAiOptimizeBusy?: boolean;
+  onNextStepContinueExtraction?: () => void;
+  nextStepContinueExtractionBusy?: boolean;
+  onNextStepContinueAiExtraction?: () => void;
+  nextStepContinueAiExtractionBusy?: boolean;
+  onNextStepCreateDesign?: () => void;
+  nextStepCreateDesignBusy?: boolean;
+  onNextStepCreateDesignSystem?: () => void;
+  nextStepCreateDesignSystemBusy?: boolean;
+  onPickSkill?: (skillId: string) => void;
+  onArtifactDownload?: (fileName: string) => void;
+  nextStepSkills?: SkillSummary[];
+  toolboxSkillNames?: Partial<Record<DesignToolboxActionId, string | null>>;
+  nextStepVariant?: NextStepActionsVariant;
 }
 
 // Props compared by reference to decide whether a memoized AssistantMessage can
-// skip re-rendering. The interaction callbacks (onSubmitForm,
-// onContinueRemainingTasks, onForkFromMessage, onFeedback, and next-step
-// actions) are DELIBERATELY
+// skip re-rendering. The interaction callbacks (onContinueRemainingTasks,
+// onForkFromMessage, onFeedback, and next-step actions) are DELIBERATELY
 // excluded: ChatPane re-creates them per render, but routes them through a ref
 // so their behavior is reference-stable — comparing them would defeat the memo
 // on every streamed frame. `isLast` is compared, which captures the only state
@@ -361,10 +401,13 @@ interface Props {
 const ASSISTANT_MESSAGE_COMPARED_PROPS: Array<keyof Props> = [
   'message',
   'streaming',
+  'showConversationTodoCard',
+  'conversationTodoInput',
   'projectId',
   'projectKind',
   'conversationId',
   'projectFiles',
+  'projectMetadata',
   'projectFileNames',
   'onRequestOpenFile',
   'onRequestPluginFolderAgentAction',
@@ -377,6 +420,17 @@ const ASSISTANT_MESSAGE_COMPARED_PROPS: Array<keyof Props> = [
   'shareToOpenDesignBusy',
   'suppressDirectionForms',
   'hasDesignSystemContext',
+  'nextStepAiOptimizeBusy',
+  'nextStepContinueExtractionBusy',
+  'nextStepContinueAiExtractionBusy',
+  'nextStepCreateDesignBusy',
+  'nextStepCreateDesignSystemBusy',
+  // Memoized + stable from ChatPane; compared so a late skill-list load
+  // refreshes the featured next-step rows' `@skill` hover detail and the
+  // More → Design toolbox global resources.
+  'toolboxSkillNames',
+  'nextStepSkills',
+  'nextStepVariant',
   // Live streaming tool input changes identity on every `tool_input_delta`.
   // ChatPane passes it only to the streaming row (undefined elsewhere), so
   // comparing it re-renders just that row as the card grows — without it the
@@ -411,12 +465,16 @@ function AssistantMessageImpl({
   message,
   streaming,
   liveToolInput,
-  projectId,
+  showConversationTodoCard = false,
+  conversationTodoInput = null,
+  projectId = null,
   projectKind = null,
   conversationId = null,
   projectFiles = [],
+  projectMetadata,
   projectFileNames,
   onRequestOpenFile,
+  onBrandBrowserAssistConfirm,
   onRequestPluginFolderAgentAction,
   activePluginActionPaths = new Set(),
   hiddenPluginActionPaths = new Set(),
@@ -425,7 +483,6 @@ function AssistantMessageImpl({
   isLast,
   errorCardOwnerId = null,
   nextUserContent,
-  onSubmitForm,
   onOpenQuestions,
   onContinueRemainingTasks,
   onForkFromMessage,
@@ -434,35 +491,40 @@ function AssistantMessageImpl({
   suppressDirectionForms = false,
   hasDesignSystemContext = false,
   onArtifactShare,
-  onArtifactChip,
+  onToolboxAction,
+  onNextStepPromptAction,
+  onNextStepAiOptimize,
+  nextStepAiOptimizeBusy,
+  onNextStepContinueExtraction,
+  nextStepContinueExtractionBusy,
+  onNextStepContinueAiExtraction,
+  nextStepContinueAiExtractionBusy,
+  onNextStepCreateDesign,
+  nextStepCreateDesignBusy,
+  onNextStepCreateDesignSystem,
+  nextStepCreateDesignSystemBusy,
+  onPickSkill,
+  onArtifactDownload,
+  nextStepSkills,
+  toolboxSkillNames,
+  nextStepVariant = 'default',
 }: Props) {
   const t = useT();
-  const events = message.events ?? [];
-  // Claude sometimes hedges by emitting a markdown duplicate of the same
-  // questions alongside an `AskUserQuestion` tool call. The card already
-  // shows the questions + options, so suppressing the trailing prose
-  // avoids rendering the same content twice. The system prompt asks the
-  // model not to do this; this is the belt-and-suspenders.
-  // The chat-pane-level PinnedTodoBar renders the canonical TodoWrite card
-  // above the composer, so we strip any TodoWrite tool-groups out of the
-  // per-message flow to avoid the same task list rendering twice.
+  const events =
+    (message.events?.length ?? 0) > 0
+      ? message.events!
+      : message.content.trim()
+        ? ([{ kind: "text", text: message.content }] satisfies AgentEvent[])
+        : [];
+  const displayEvents = useMemo(() => dedupeToolUsesById(events), [events]);
+  // ChatPane renders the canonical TodoWrite card as a standalone chat row, so
+  // we strip TodoWrite tool-groups out of the per-message flow to avoid the
+  // same task list rendering twice.
   const settledUseIds = useMemo(
-    () => new Set(events.filter((e) => e.kind === "tool_use").map((e) => e.id)),
-    [events],
+    () => new Set(displayEvents.filter((e) => e.kind === "tool_use").map((e) => e.id)),
+    [displayEvents],
   );
-  // The earliest still-streaming AskUserQuestion (no full `tool_use` yet),
-  // tagged with the event position the tool call started at so we can place
-  // its live card there — text before it is preamble, text after is hedging.
-  const liveAuq = useMemo(() => {
-    if (!streaming || !liveToolInput) return null;
-    const entries = Object.entries(liveToolInput)
-      .filter(([id, e]) => !settledUseIds.has(id) && isAskUserQuestionName(e.name))
-      .map(([id, e]) => ({ id, raw: e.text, seq: e.seq ?? events.length }))
-      .sort((a, b) => a.seq - b.seq);
-    return entries[0] ?? null;
-  }, [streaming, liveToolInput, settledUseIds, events.length]);
-  // Live code boxes (Write/Edit streaming) append after everything else; they
-  // aren't part of the fallback-suppression ordering.
+  // Live code boxes (Write/Edit streaming) append after everything else.
   const liveCodeBlocks = useMemo<Block[]>(() => {
     if (!streaming || !liveToolInput) return [];
     const out: Block[] = [];
@@ -473,58 +535,68 @@ function AssistantMessageImpl({
     }
     return out;
   }, [streaming, liveToolInput, settledUseIds]);
-  // Compose the block list with the live AskUserQuestion at its real stream
-  // position (split the events around `seq`), then run the strip/suppress
-  // pipeline once. Because the live AUQ sits between preamble and any hedging,
-  // `suppressAskUserQuestionFallbackText` keeps the preamble and drops the
-  // hedging — matching the settled-case semantics.
+  // Compose the block list, then run the strip/suppress pipeline once.
   const blocks = useMemo(() => {
-    const rawBlocks = liveAuq
-      ? (() => {
-          const n = Math.min(Math.max(liveAuq.seq, 0), events.length);
-          return [
-            ...buildBlocks(events.slice(0, n)),
-            { kind: "live-tool", id: liveAuq.id, name: "AskUserQuestion", raw: liveAuq.raw } as Block,
-            ...buildBlocks(events.slice(n)),
-            ...liveCodeBlocks,
-          ];
-        })()
-      : [...buildBlocks(events), ...liveCodeBlocks];
-    return stripTodoToolGroups(
-      stripEmptyThinkingBlocks(
-        suppressDuplicateQuestionForms(suppressAskUserQuestionFallbackText(rawBlocks)),
-      ),
+    const rawBlocks = [...buildBlocks(displayEvents), ...liveCodeBlocks];
+    return placeConversationTodoCard(
+      stripEmptyThinkingBlocks(suppressDuplicateQuestionForms(rawBlocks)),
+      {
+        show: showConversationTodoCard,
+        input: conversationTodoInput,
+      },
     );
-  }, [events, liveAuq, liveCodeBlocks]);
-  const fileOps = useMemo(() => deriveFileOps(events), [events]);
+  }, [displayEvents, liveCodeBlocks, showConversationTodoCard, conversationTodoInput]);
+  const fileOps = useMemo(() => deriveFileOps(displayEvents), [displayEvents]);
   const produced = message.producedFiles ?? [];
   const displayedProduced = useMemo(
-    () =>
-      produced.length > 0
-        ? produced
-        : inferProducedFilesFromTurn({
-            message,
-            projectFiles,
-            blocks,
-            fileOps,
-            streaming,
-          }),
-    [blocks, fileOps, message, produced, projectFiles, streaming],
+    () => {
+      const linkedFiles = recoverLinkedProjectFilesFromContent(
+        message.content,
+        projectFiles,
+        projectId,
+        message,
+      );
+      const baseFiles =
+        produced.length > 0
+          ? produced
+          : inferProducedFilesFromTurn({
+              message,
+              projectFiles,
+              blocks,
+              fileOps,
+              streaming,
+            });
+      return mergeProjectFiles(baseFiles, linkedFiles);
+    },
+    [blocks, fileOps, message, produced, projectFiles, projectId, streaming],
   );
-  // The single artifact the "next step" affordance anchors to: prefer the
-  // first HTML produced file (decks/prototypes are HTML and are the ones the
-  // Share/Export menu + visual-polish loop apply to).
+  const turnFileOps = useMemo(
+    () => mergeProducedFilesIntoFileOps(fileOps, displayedProduced),
+    [displayedProduced, fileOps],
+  );
+  // The single artifact the "next step" affordance anchors to: prefer the HTML
+  // produced by THIS turn; if the final turn emitted none (a summary / continue
+  // message) fall back to the most recently modified HTML in the project so
+  // Share / Download still target the deliverable the user just made.
   const nextStepArtifactName = useMemo(
-    () => pickPreviewableArtifact(displayedProduced),
-    [displayedProduced],
+    () => pickPreviewableArtifact(displayedProduced) ?? pickLatestPreviewableArtifact(projectFiles),
+    [displayedProduced, projectFiles],
   );
+  const planNextStepName = useMemo(
+    () => pickPlanDocument(displayedProduced) ?? pickLatestPlanDocument(projectFiles),
+    [displayedProduced, projectFiles],
+  );
+  const isPlanNextStep = nextStepVariant === 'plan' || message.sessionMode === 'plan';
+  const nextStepFileName = isPlanNextStep
+    ? (planNextStepName ?? nextStepArtifactName)
+    : nextStepArtifactName;
   const pluginActionFolders = useMemo(
     () =>
       !streaming && isLast && projectId
-        ? pluginFoldersTouchedThisTurn(projectFiles, fileOps, displayedProduced, message.content)
+        ? pluginFoldersTouchedThisTurn(projectFiles, turnFileOps, displayedProduced, message.content)
             .filter((folder) => !hiddenPluginActionPaths.has(folder.path))
         : [],
-    [displayedProduced, fileOps, hiddenPluginActionPaths, isLast, message.content, projectFiles, projectId, streaming],
+    [displayedProduced, hiddenPluginActionPaths, isLast, message.content, projectFiles, projectId, streaming, turnFileOps],
   );
   // Plugin action state lives at the AssistantMessage level (not inside
   // PluginActionPanel) so the success notice survives the unmount/remount
@@ -592,10 +664,36 @@ function AssistantMessageImpl({
   const hasEmptyResponse = events.some(
     (e) => e.kind === "status" && e.label === "empty_response"
   );
+  const isBrandBrowserAssistMessage =
+    isBrandExtractionNextStepVariant(nextStepVariant) &&
+    (message.content.includes('<od-card type="brand-browser-assist"') ||
+      textNeedsBrandBrowserAssistFallback(message.content));
+  const brandBrowserAssistFallbackCard = useMemo(
+    () =>
+      streaming
+        ? null
+        : buildBrandBrowserAssistFallbackCard({
+            content: message.content,
+            metadata: projectMetadata,
+            nextStepVariant,
+          }),
+    [message.content, nextStepVariant, projectMetadata, streaming],
+  );
   const unfinishedTodos = streaming ? [] : unfinishedTodosFromEvents(events);
   const runSucceeded =
     !streaming &&
-    (message.runStatus === "succeeded" || (!message.runStatus && !!message.endedAt));
+    (
+      message.runStatus === "succeeded" ||
+      (!message.runStatus && !!message.endedAt) ||
+      isBrandBrowserAssistMessage
+    );
+  const runTerminal =
+    !streaming &&
+    (
+      (message.runStatus ? isTerminalRunStatus(message.runStatus) : false) ||
+      (!message.runStatus && !!message.endedAt) ||
+      isBrandBrowserAssistMessage
+    );
   const canContinueTodos =
     !streaming &&
     !!isLast &&
@@ -621,31 +719,52 @@ function AssistantMessageImpl({
     hasEmptyResponse ||
     !!copyMarkdown ||
     canFork;
+  const canShowOpenDesignSubmission = !!onShareToOpenDesign && showFeedback && runSucceeded;
+  const showOpenDesignSubmission =
+    canShowOpenDesignSubmission && (!!isLast || shareToOpenDesignBusy);
+  const effectiveNextStepVariant: NextStepActionsVariant =
+    nextStepVariant === 'brand-extraction' && (!runSucceeded || !nextStepArtifactName)
+      ? 'brand-programmatic-incomplete'
+      : nextStepVariant === 'default' && (!runSucceeded || !nextStepArtifactName)
+        ? 'project-incomplete'
+        : nextStepVariant;
+  const hasNextStepPrimary =
+    effectiveNextStepVariant === 'brand-extraction'
+      ? !!onNextStepAiOptimize || !!onNextStepCreateDesign || !!onNextStepContinueExtraction
+      : effectiveNextStepVariant === 'brand-extraction-incomplete' ||
+          effectiveNextStepVariant === 'brand-programmatic-incomplete'
+        ? !!onNextStepContinueExtraction || !!onNextStepContinueAiExtraction
+        : effectiveNextStepVariant === 'brand-ai-incomplete'
+          ? !!onNextStepContinueAiExtraction
+        : effectiveNextStepVariant === 'design-system'
+          ? !!onNextStepPromptAction
+          : effectiveNextStepVariant === 'plan'
+            ? !!onNextStepPromptAction
+          : effectiveNextStepVariant === 'project-incomplete'
+            ? !!onNextStepPromptAction ||
+              !!onToolboxAction ||
+              !!onNextStepCreateDesignSystem ||
+              (!!nextStepArtifactName && (!!onArtifactShare || !!onArtifactDownload))
+            : !!onToolboxAction ||
+              !!onNextStepCreateDesignSystem ||
+              (!!nextStepArtifactName && (!!onArtifactShare || !!onArtifactDownload));
+  // Terminal turns should leave the user with an actionable path, including
+  // canceled/failed/no-artifact turns. Artifact-backed cards still wire Share
+  // and Download to the chosen file; incomplete cards fall back to composer
+  // prompts or toolbox actions.
+  const showNextStepActions =
+    !streaming &&
+    runTerminal &&
+    ((!!isLast && hasNextStepPrimary) || showOpenDesignSubmission);
   // Pre-output vs working: before any real content (text / thinking / tools /
   // files) the footer shimmers "Preparing…"; the moment content lands it
   // flips to "Working". The elapsed clock stays anchored to the persisted run
   // start so switching project tabs or remounting the message cannot restart it.
-  const hasContent = blocks.some((b) => b.kind !== "status") || fileOps.length > 0;
+  const hasContent = blocks.some((b) => b.kind !== "status") || turnFileOps.length > 0;
   const preparing = streaming && !hasContent;
-  const [dismissedCandidateIds, setDismissedCandidateIds] = useState<Set<string>>(
-    () => new Set()
-  );
-  // Route interactive tool answers (currently AskUserQuestion) back to the
-  // still-open stream-json child via the daemon. We resolve to `true` on
-  // success so the card can flip into its answered state; on `false` (run
-  // already terminated, stdin closed, etc.) the card falls back to the
-  // plain-text `onSubmitForm` path so the user is never stuck. Only wire
-  // this when we have an active run id and the message is the latest turn
-  // — older messages whose run is gone use the fallback exclusively.
-  const onAnswerToolUse = useCallback(
-    async (toolUseId: string, content: string) => {
-      if (!isLast) return false;
-      if (!message.runId) return false;
-      const resp = await submitChatRunToolResult(message.runId, toolUseId, content);
-      return resp.ok;
-    },
-    [isLast, message.runId],
-  );
+  const preparingStatus = preparing && events.some((e) => e.kind === "status" && e.label === "thinking")
+    ? "thinking"
+    : "preparing";
 
   // Index of the trailing text block — the streaming caret rides the end of
   // the last prose block so it tracks the final character as tokens arrive.
@@ -664,20 +783,13 @@ function AssistantMessageImpl({
         <span className="role-name">{roleName}</span>
       </div>
       <div className="assistant-flow">
-        {fileOps.length > 0 ? (
-          <FileOpsSummary
-            entries={fileOps}
-            streaming={streaming}
-            projectFileNames={projectFileNames}
-            onRequestOpenFile={onRequestOpenFile}
-          />
-        ) : null}
         {blocks.map((b, i) => {
           if (b.kind === "text")
             return (
               <ProseBlock
                 key={i}
                 text={b.text}
+                hideRecoveredHtmlFallback={(message.agentId === "grok-build" || message.agentId === "claude") && !streaming}
                 assistantMessageId={message.id}
                 isLastAssistant={!!isLast}
                 streaming={streaming}
@@ -686,8 +798,11 @@ function AssistantMessageImpl({
                 suppressDirectionForms={suppressDirectionForms}
                 onOpenQuestions={onOpenQuestions}
                 projectId={projectId}
+                conversationId={conversationId}
+                runId={message.runId ?? null}
                 projectFileNames={projectFileNames}
                 onRequestOpenFile={onRequestOpenFile}
+                onBrandBrowserAssistConfirm={onBrandBrowserAssistConfirm}
               />
             );
           if (b.kind === "thinking")
@@ -710,32 +825,18 @@ function AssistantMessageImpl({
                 runSucceeded={runSucceeded}
                 projectFileNames={projectFileNames}
                 onRequestOpenFile={onRequestOpenFile}
-                isLast={!!isLast}
-                onSubmitForm={onSubmitForm}
-                onAnswerToolUse={onAnswerToolUse}
               />
             );
           }
           if (b.kind === "live-tool") {
-            if (isAskUserQuestionName(b.name)) {
-              return <StreamingAskUserQuestionCard key={b.id} raw={b.raw} />;
-            }
             return <LiveCodeBox key={b.id} name={b.name} raw={b.raw} />;
           }
           if (b.kind === "plugin-candidate") {
-            if (dismissedCandidateIds.has(b.candidateId)) return null;
             return (
               <SkillPluginCandidateCard
                 key={i}
                 block={b}
                 projectId={projectId}
-                onDismissed={(candidateId) =>
-                  setDismissedCandidateIds((prev) => {
-                    const next = new Set(prev);
-                    next.add(candidateId);
-                    return next;
-                  })
-                }
                 onRequestOpenFile={onRequestOpenFile}
               />
             );
@@ -754,23 +855,32 @@ function AssistantMessageImpl({
           }
           return null;
         })}
-        {!streaming && displayedProduced.length > 0 && projectId ? (
+        {brandBrowserAssistFallbackCard ? (
+          <OdCardView
+            card={brandBrowserAssistFallbackCard}
+            onBrandBrowserAssistConfirm={onBrandBrowserAssistConfirm}
+            instanceScope={[
+              projectId ?? "no-project",
+              conversationId ?? "no-conversation",
+              message.runId ?? "no-run",
+              message.id,
+              "brand-browser-assist-fallback",
+            ].join(":")}
+          />
+        ) : null}
+        {turnFileOps.length > 0 ? (
+          <FileOpsSummary
+            entries={turnFileOps}
+            streaming={streaming}
+            projectFileNames={projectFileNames}
+            onRequestOpenFile={onRequestOpenFile}
+          />
+        ) : null}
+        {!streaming && turnFileOps.length === 0 && displayedProduced.length > 0 && projectId ? (
           <ProducedFiles
             files={displayedProduced}
             projectId={projectId}
             onRequestOpenFile={onRequestOpenFile}
-          />
-        ) : null}
-        {!streaming &&
-        isLast &&
-        projectId &&
-        nextStepArtifactName &&
-        onArtifactShare &&
-        onArtifactChip ? (
-          <NextStepActions
-            fileName={nextStepArtifactName}
-            onShare={onArtifactShare}
-            onChip={onArtifactChip}
           />
         ) : null}
         {!streaming && projectId && pluginActionFolders.length > 0 ? (
@@ -836,11 +946,11 @@ function AssistantMessageImpl({
                   hasUnfinishedTodos: unfinishedTodos.length > 0,
                   hasEmptyResponse,
                   preparing,
+                  preparingStatus,
                   copyMarkdown,
                   onFork: canFork ? onForkFromMessage : undefined,
                   forking,
                   forceVisible: true,
-                  message,
                   isLast: !!isLast,
                 }}
               />
@@ -853,36 +963,41 @@ function AssistantMessageImpl({
                 hasUnfinishedTodos={unfinishedTodos.length > 0}
                 hasEmptyResponse={hasEmptyResponse}
                 preparing={preparing}
+                preparingStatus={preparingStatus}
                 copyMarkdown={copyMarkdown}
                 onFork={canFork ? onForkFromMessage : undefined}
                 forking={forking}
-                message={message}
                 isLast={!!isLast}
               />
             )}
-            {/*
-              "Share to Open Design" — pairs with the post-feedback Discord
-              prompt (assistant-feedback-discord-note). Only shows on the most
-              recent assistant message after a successful run, gated on the
-              same isFeedbackEligible signal so it appears alongside the
-              thumbs-up/down + Discord CTA — not on errored runs, partial
-              streams, or empty responses. Click hands the user a packaged
-              plugin via the bundled od-share-to-community scenario.
-            */}
-            {onShareToOpenDesign && isLast && showFeedback ? (
-              <button
-                type="button"
-                className="assistant-share-to-od-btn"
-                data-testid="assistant-share-to-od"
-                disabled={shareToOpenDesignBusy}
-                onClick={onShareToOpenDesign}
-              >
-                {shareToOpenDesignBusy
-                  ? t('assistant.shareToOpenDesignBusy')
-                  : t('assistant.shareToOpenDesign')}
-              </button>
-            ) : null}
           </div>
+        ) : null}
+        {showNextStepActions ? (
+          <NextStepActions
+            fileName={isLast ? nextStepFileName : null}
+            planFileName={isLast ? planNextStepName : null}
+            artifactFileName={isLast ? nextStepArtifactName : null}
+            onShare={isLast && nextStepArtifactName && !isPlanNextStep ? onArtifactShare : undefined}
+            onToolboxAction={isLast ? onToolboxAction : undefined}
+            onPromptAction={isLast ? onNextStepPromptAction : undefined}
+            onAiOptimize={isLast ? onNextStepAiOptimize : undefined}
+            aiOptimizeBusy={Boolean(isLast && nextStepAiOptimizeBusy)}
+            onContinueExtraction={isLast ? onNextStepContinueExtraction : undefined}
+            continueExtractionBusy={Boolean(isLast && nextStepContinueExtractionBusy)}
+            onContinueAiExtraction={isLast ? onNextStepContinueAiExtraction : undefined}
+            continueAiExtractionBusy={Boolean(isLast && nextStepContinueAiExtractionBusy)}
+            onCreateDesign={isLast ? onNextStepCreateDesign : undefined}
+            createDesignBusy={Boolean(isLast && nextStepCreateDesignBusy)}
+            onCreateDesignSystem={isLast ? onNextStepCreateDesignSystem : undefined}
+            createDesignSystemBusy={Boolean(isLast && nextStepCreateDesignSystemBusy)}
+            onPickSkill={isLast ? onPickSkill : undefined}
+            onDownload={isLast && nextStepFileName ? onArtifactDownload : undefined}
+            skills={isLast ? nextStepSkills : undefined}
+            toolboxSkillNames={isLast ? toolboxSkillNames : undefined}
+            onShareToOpenDesign={showOpenDesignSubmission ? onShareToOpenDesign : undefined}
+            shareToOpenDesignBusy={shareToOpenDesignBusy}
+            variant={effectiveNextStepVariant}
+          />
         ) : null}
       </div>
     </div>
@@ -893,11 +1008,49 @@ function AssistantMessageImpl({
 // files, or null if this turn produced no shareable/polishable preview. Only
 // HTML files drive the preview workspace's Share/Export menu and the
 // visual-polish loop, so the "next step" affordance keys off them.
+function isPreviewableHtml(f: ProjectFile): boolean {
+  return f.kind === "html" || /\.html?$/i.test(f.name);
+}
+
 function pickPreviewableArtifact(files: ProjectFile[]): string | null {
-  const html = files.find(
-    (f) => f.kind === "html" || /\.html?$/i.test(f.name),
-  );
+  const html = files.find(isPreviewableHtml);
   return html ? html.name : null;
+}
+
+// Fallback for when the card-bearing turn produced no HTML itself: pick the
+// most recently modified HTML in the project (the deliverable the user just
+// made / is looking at) rather than whichever HTML happens to be first, which
+// would attach Share/Download to an arbitrary file in a multi-artifact project.
+function pickLatestPreviewableArtifact(files: ProjectFile[]): string | null {
+  let latest: ProjectFile | null = null;
+  for (const f of files) {
+    if (!isPreviewableHtml(f)) continue;
+    if (!latest || (f.mtime ?? 0) > (latest.mtime ?? 0)) latest = f;
+  }
+  return latest ? latest.name : null;
+}
+
+const PLAN_DOCUMENT_EXCLUDES = new Set(['design.md', 'brand-system.md']);
+
+function isPlanDocument(f: ProjectFile): boolean {
+  const name = f.name.toLowerCase();
+  if (!/\.mdx?$/.test(name)) return false;
+  const basename = name.split('/').pop() ?? name;
+  return !PLAN_DOCUMENT_EXCLUDES.has(basename);
+}
+
+function pickPlanDocument(files: ProjectFile[]): string | null {
+  const doc = files.find(isPlanDocument);
+  return doc ? doc.name : null;
+}
+
+function pickLatestPlanDocument(files: ProjectFile[]): string | null {
+  let latest: ProjectFile | null = null;
+  for (const f of files) {
+    if (!isPlanDocument(f)) continue;
+    if (!latest || (f.mtime ?? 0) > (latest.mtime ?? 0)) latest = f;
+  }
+  return latest ? latest.name : null;
 }
 
 function inferProducedFilesFromTurn({
@@ -930,6 +1083,232 @@ function inferProducedFilesFromTurn({
   ).sort((a, b) => b.mtime - a.mtime);
 }
 
+function mergeProducedFilesIntoFileOps(
+  fileOps: FileOpEntry[],
+  produced: ProjectFile[],
+): FileOpEntry[] {
+  if (produced.length === 0) return fileOps;
+  const seen = new Set<string>();
+  for (const entry of fileOps) {
+    seen.add(normalizeTouchedPath(entry.path));
+    seen.add(normalizeTouchedPath(entry.fullPath));
+  }
+
+  const merged = [...fileOps];
+  for (const file of produced) {
+    const fullPath = file.path || file.name;
+    const path = file.name || fullPath;
+    if (!path || seen.has(normalizeTouchedPath(path)) || seen.has(normalizeTouchedPath(fullPath))) {
+      continue;
+    }
+    seen.add(normalizeTouchedPath(path));
+    seen.add(normalizeTouchedPath(fullPath));
+    merged.push({
+      path,
+      fullPath,
+      ops: ["write"],
+      opCounts: { read: 0, write: 1, edit: 0, delete: 0 },
+      total: 1,
+      status: "done",
+    });
+  }
+  return merged;
+}
+
+function normalizeTouchedPath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function recoverLinkedProjectFilesFromContent(
+  content: string,
+  projectFiles: ProjectFile[],
+  projectId?: string | null,
+  message?: ChatMessage,
+): ProjectFile[] {
+  if (!content || projectFiles.length === 0) return [];
+  const projectFileNames = new Set<string>();
+  const byPath = new Map<string, ProjectFile>();
+  const basenameFiles = new Map<string, ProjectFile | null>();
+  for (const file of projectFiles) {
+    if (file.type === "dir") continue;
+    for (const value of [file.name, file.path, file.localPath]) {
+      if (!value) continue;
+      const normalized = normalizeTouchedPath(value);
+      projectFileNames.add(normalized);
+      byPath.set(normalized, file);
+      const basename = normalized.split("/").filter(Boolean).pop();
+      if (basename && basename !== normalized) {
+        basenameFiles.set(
+          basename,
+          basenameFiles.has(basename) ? null : file,
+        );
+      }
+    }
+  }
+  for (const [basename, file] of basenameFiles) {
+    if (!file) continue;
+    projectFileNames.add(basename);
+    byPath.set(basename, file);
+  }
+  if (projectFileNames.size === 0) return [];
+
+  const recovered = new Map<string, ProjectFile>();
+  for (const href of extractContentFileReferences(content, projectFileNames)) {
+    const filePath = asInProjectFilePath(href, projectFileNames, projectId);
+    if (!filePath) continue;
+    const file = byPath.get(normalizeTouchedPath(filePath));
+    if (!file) continue;
+    if (!shouldRecoverReferencedFile(content, href, file, message)) continue;
+    recovered.set(file.path || file.name, file);
+  }
+  return Array.from(recovered.values());
+}
+
+function extractContentFileReferences(
+  content: string,
+  projectFileNames: ReadonlySet<string>,
+): string[] {
+  const refs = new Set<string>();
+  for (const href of extractMarkdownLinkHrefs(content)) refs.add(href);
+  for (const ref of extractInlineCodeFileRefs(content)) refs.add(ref);
+  for (const ref of extractKnownProjectFileRefs(content, projectFileNames)) refs.add(ref);
+  return Array.from(refs);
+}
+
+function extractInlineCodeFileRefs(content: string): string[] {
+  const refs: string[] = [];
+  const codePattern = /`([^`\n]+)`/g;
+  let match: RegExpExecArray | null;
+  while ((match = codePattern.exec(content)) !== null) {
+    const raw = match[1]?.trim();
+    if (raw && looksLikeFileReference(raw)) refs.push(raw);
+  }
+  return refs;
+}
+
+function extractKnownProjectFileRefs(
+  content: string,
+  projectFileNames: ReadonlySet<string>,
+): string[] {
+  const refs: string[] = [];
+  const names = Array.from(projectFileNames)
+    .filter((name) => name.length > 0)
+    .sort((a, b) => b.length - a.length);
+  if (names.length === 0) return refs;
+  for (const line of content.split(/\r?\n/)) {
+    for (const name of names) {
+      if (lineContainsFileReference(line, name)) refs.push(name);
+    }
+  }
+  return refs;
+}
+
+function shouldRecoverReferencedFile(
+  content: string,
+  rawRef: string,
+  file: ProjectFile,
+  message?: ChatMessage,
+): boolean {
+  if (isFileMtimeInsideRun(file, message)) return true;
+  return contentHasOutputHintForFile(content, rawRef, file);
+}
+
+function isFileMtimeInsideRun(file: ProjectFile, message?: ChatMessage): boolean {
+  if (!message?.startedAt || !message.endedAt) return false;
+  const start = message.startedAt - 1_000;
+  const end = message.endedAt + 60_000;
+  return file.mtime >= start && file.mtime <= end;
+}
+
+function contentHasOutputHintForFile(
+  content: string,
+  rawRef: string,
+  file: ProjectFile,
+): boolean {
+  const refs = [
+    rawRef,
+    file.name,
+    file.path,
+    file.localPath,
+    file.name.split("/").filter(Boolean).pop(),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  return content.split(/\r?\n/).some((line) => {
+    if (!lineHasOutputFileHint(line)) return false;
+    return refs.some((ref) => lineContainsFileReference(line, normalizeTouchedPath(ref)));
+  });
+}
+
+function lineHasOutputFileHint(line: string): boolean {
+  return /(?:\b(?:add(?:ed)?|built|chang(?:e|ed)|creat(?:e|ed)|deliverable|edit(?:ed)?|file(?:s)?|generat(?:e|ed)|modif(?:y|ied)|output|produc(?:e|ed)|sav(?:e|ed)|updat(?:e|ed)|writ(?:e|ten|ing)|wrote)\b|产物|创建|生成|交付|输出|保存|文件|新增|更新|修改|完成|已创建|已生成|已写入|写入)/i.test(line);
+}
+
+function lineContainsFileReference(line: string, ref: string): boolean {
+  const normalizedLine = normalizeTouchedPath(line);
+  const normalizedRef = normalizeTouchedPath(ref);
+  if (!normalizedRef) return false;
+  const escaped = escapeRegExp(normalizedRef);
+  return new RegExp(`(^|[\\s\`"'“”‘’\\[\\]()<>{}:：,，.。;；!?！？])${escaped}($|[\\s\`"'“”‘’\\[\\]()<>{}:：,，.。;；!?！？])`).test(normalizedLine);
+}
+
+function looksLikeFileReference(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 240) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return true;
+  return /(?:^|[/\\])[^/\\]+\.[a-z0-9]{1,12}(?:[#?].*)?$/i.test(trimmed);
+}
+
+function extractMarkdownLinkHrefs(content: string): string[] {
+  const hrefs: string[] = [];
+  const linkPattern = /(!?)\[[^\]\n]*\]\(([^)\n]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = linkPattern.exec(content)) !== null) {
+    if (match[1] === "!") continue;
+    const href = normalizeMarkdownHref(match[2] ?? "");
+    if (href) hrefs.push(href);
+  }
+  return hrefs;
+}
+
+function normalizeMarkdownHref(rawHref: string): string | null {
+  const trimmed = rawHref.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("<")) {
+    const end = trimmed.indexOf(">");
+    return end > 1 ? trimmed.slice(1, end).trim() : null;
+  }
+  const titled = /^(\S+)\s+(?:"[^"]*"|'[^']*'|\([^)]*\))$/.exec(trimmed);
+  return (titled?.[1] ?? trimmed).trim() || null;
+}
+
+function mergeProjectFiles(
+  first: ProjectFile[],
+  second: ProjectFile[],
+): ProjectFile[] {
+  if (first.length === 0) return second;
+  if (second.length === 0) return first;
+  const seen = new Set<string>();
+  const merged: ProjectFile[] = [];
+  for (const file of [...first, ...second]) {
+    const key = normalizeTouchedPath(file.path || file.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(file);
+  }
+  return merged;
+}
+
+// A run that reached a terminal state — succeeded, failed, or canceled — has a
+// settled assistant turn worth rating. Only queued/running turns are still in
+// flight, so they have no outcome to give feedback on yet. Feedback used to be
+// gated on success alone, which silently dropped the thumbs row on failed and
+// canceled turns even though those are exactly the outcomes a user most wants
+// to thumbs-down.
+function isTerminalRunStatus(
+  status: NonNullable<ChatMessage["runStatus"]>
+): boolean {
+  return status === "succeeded" || status === "failed" || status === "canceled";
+}
+
 function isFeedbackEligible({
   streaming,
   message,
@@ -942,28 +1321,8 @@ function isFeedbackEligible({
   hasUnfinishedTodos: boolean;
 }): boolean {
   if (streaming || hasEmptyResponse || hasUnfinishedTodos) return false;
-  if (message.runStatus) return message.runStatus === "succeeded";
+  if (message.runStatus) return isTerminalRunStatus(message.runStatus);
   return !!message.endedAt;
-}
-
-function MessageTimestamp({
-  message,
-  t,
-}: {
-  message: ChatMessage;
-  t: TranslateFn;
-}) {
-  const ts = messageTime(message);
-  if (!ts) return null;
-  return (
-    <time
-      className="msg-time"
-      dateTime={new Date(ts).toISOString()}
-      title={exactDateTime(ts)}
-    >
-      {relativeTimeLong(ts, t)}
-    </time>
-  );
 }
 
 // The agent name without the trailing model id — the role header shows the
@@ -1038,12 +1397,12 @@ interface AssistantFooterProps {
   // Pre-output phase: streaming but nothing rendered yet. The label shimmers
   // "Preparing…"; once content lands it flips to "Working".
   preparing?: boolean;
+  preparingStatus?: "preparing" | "thinking";
   copyMarkdown?: string;
   onFork?: () => void;
   forking?: boolean;
   feedbackControls?: ReactNode;
   forceVisible?: boolean;
-  message?: ChatMessage;
   // The most recent assistant reply keeps its footer permanently visible
   // (not hover-gated), matching Lobe Chat's persistent last-message footer.
   isLast?: boolean;
@@ -1057,12 +1416,12 @@ function AssistantFooter({
   hasUnfinishedTodos,
   hasEmptyResponse,
   preparing = false,
+  preparingStatus = "preparing",
   copyMarkdown,
   onFork,
   forking = false,
   feedbackControls,
   forceVisible = false,
-  message,
   isLast = false,
 }: AssistantFooterProps) {
   const t = useT();
@@ -1096,7 +1455,9 @@ function AssistantFooter({
       <span className={`assistant-label${streaming && preparing ? " shimmer-text shimmer-prepare" : ""}`}>
         {streaming
           ? preparing
-            ? t("assistant.statusPreparing")
+            ? preparingStatus === "thinking"
+              ? t("assistant.statusThinking")
+              : t("assistant.statusPreparing")
             : t("assistant.workingLabel")
           : hasEmptyResponse
           ? t("assistant.emptyResponseLabel")
@@ -1123,7 +1484,6 @@ function AssistantFooter({
           {feedbackControls}
         </span>
       ) : null}
-      {!streaming && message ? <MessageTimestamp message={message} t={t} /> : null}
     </div>
   );
 }
@@ -1144,6 +1504,7 @@ function AssistantForkButton({
       type="button"
       className="assistant-copy-button od-tooltip"
       disabled={disabled}
+      data-testid="assistant-fork-button"
       data-tooltip={label}
       data-tooltip-placement="top"
       onClick={onFork}
@@ -1182,6 +1543,7 @@ function AssistantMarkdownCopyButton({ markdown }: { markdown: string }) {
     <button
       type="button"
       className="assistant-copy-button od-tooltip"
+      data-testid="assistant-copy-markdown"
       data-copied={copied ? "true" : "false"}
       data-tooltip={label}
       data-tooltip-placement="top"
@@ -1482,6 +1844,7 @@ function AssistantFeedback({
       <button
         type="button"
         className="assistant-feedback-button od-tooltip"
+        data-testid="assistant-feedback-positive"
         data-selected={selected === "positive" ? "true" : "false"}
         data-tooltip={t("assistant.feedbackPositive")}
         data-tooltip-placement="top"
@@ -1509,6 +1872,7 @@ function AssistantFeedback({
       <button
         type="button"
         className="assistant-feedback-button od-tooltip"
+        data-testid="assistant-feedback-negative"
         data-selected={selected === "negative" ? "true" : "false"}
         data-tooltip={t("assistant.feedbackNegative")}
         data-tooltip-placement="top"
@@ -1956,6 +2320,7 @@ function hasPluginFinalActionHint(content: string): boolean {
 
 function ProseBlock({
   text,
+  hideRecoveredHtmlFallback,
   assistantMessageId,
   isLastAssistant,
   streaming,
@@ -1964,10 +2329,14 @@ function ProseBlock({
   suppressDirectionForms,
   onOpenQuestions,
   projectId,
+  conversationId,
+  runId,
   projectFileNames,
   onRequestOpenFile,
+  onBrandBrowserAssistConfirm,
 }: {
   text: string;
+  hideRecoveredHtmlFallback?: boolean;
   assistantMessageId: string;
   isLastAssistant: boolean;
   streaming: boolean;
@@ -1975,23 +2344,30 @@ function ProseBlock({
   nextUserContent?: string;
   suppressDirectionForms: boolean;
   projectId?: string | null;
+  conversationId?: string | null;
+  runId?: string | null;
   projectFileNames?: Set<string>;
   onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
   onRequestOpenFile?: (name: string) => void;
+  onBrandBrowserAssistConfirm?: BrandBrowserAssistConfirm;
 }) {
   const t = useT();
-  const cleaned = useMemo(() => stripArtifact(text), [text]);
+  const cleaned = useMemo(() => {
+    const stripped = stripArtifact(text);
+    return hideRecoveredHtmlFallback ? stripRecoveredHtmlFallbackForDisplay(stripped, text) : stripped;
+  }, [hideRecoveredHtmlFallback, text]);
   // While the latest turn is still streaming a not-yet-closed question-form,
   // drop the partial `<question-form>{…` markup from the prose so the chat
   // doesn't flash raw JSON; we surface a banner for it instead. The actual
-  // form streams into the right-hand Questions tab.
-  const { text: visibleText, hadOpenForm } = useMemo(
-    () =>
-      isLastAssistant && streaming
-        ? stripTrailingOpenQuestionForm(cleaned)
-        : { text: cleaned, hadOpenForm: false },
-    [cleaned, isLastAssistant, streaming],
-  );
+  // form streams into the right-hand Questions tab. A not-yet-closed
+  // `<od-card>{…` block is stripped the same way so its raw JSON doesn't flash
+  // before the close tag arrives (the card renders inline once complete).
+  const { text: visibleText, hadOpenForm } = useMemo(() => {
+    if (!(isLastAssistant && streaming)) return { text: cleaned, hadOpenForm: false };
+    const form = stripTrailingOpenQuestionForm(cleaned);
+    const card = stripTrailingOpenOdCard(form.text);
+    return { text: card.text, hadOpenForm: form.hadOpenForm };
+  }, [cleaned, isLastAssistant, streaming]);
   // While an `<artifact type="text/html">` is still streaming (no closing tag
   // yet), surface its body in a live code panel instead of leaking the raw
   // tag + half-written HTML as Markdown text. Once it closes, stripArtifact
@@ -2015,33 +2391,37 @@ function ProseBlock({
       onRequestOpenFile(path);
     };
   }, [onRequestOpenFile, projectFileNames, projectId]);
-  // Each text segment is further split on `<system-reminder>` blocks so
-  // those render as their own collapsible chip instead of raw markup.
-  const renderable = segments.flatMap(
-    (
-      seg,
-      idx
-    ): Array<
-      | { key: string; kind: "text"; text: string }
-      | { key: string; kind: "reminder"; text: string }
-      | { key: string; kind: "form"; form: QuestionForm }
-      | { key: string; kind: "suppressed-direction" }
-    > => {
-      if (seg.kind === "form") {
-        if (suppressDirectionForms && isDirectionForm(seg.form)) {
-          return [{ key: `f-${idx}`, kind: "suppressed-direction" }];
-        }
-        return [{ key: `f-${idx}`, kind: "form", form: seg.form }];
+  // Each text segment is further split on `<od-card>` blocks (so memory cards
+  // render inline, composing with the surrounding question-form handling) and
+  // then on `<system-reminder>` blocks (so those render as their own
+  // collapsible chip instead of raw markup). Splitting od-cards BEFORE
+  // system-reminders keeps a card's JSON body out of the reminder scanner.
+  type Renderable =
+    | { key: string; kind: "text"; text: string }
+    | { key: string; kind: "reminder"; text: string }
+    | { key: string; kind: "form"; form: QuestionForm }
+    | { key: string; kind: "od-card"; card: OdCard }
+    | { key: string; kind: "suppressed-direction" };
+  const renderable = segments.flatMap((seg, idx): Renderable[] => {
+    if (seg.kind === "form") {
+      if (suppressDirectionForms && isDirectionForm(seg.form)) {
+        return [{ key: `f-${idx}`, kind: "suppressed-direction" }];
       }
-      if (seg.text.trim().length === 0) return [];
-      const sub = splitSystemReminders(seg.text);
-      return sub.map((s, j) => ({
-        key: `t-${idx}-${j}`,
+      return [{ key: `f-${idx}`, kind: "form", form: seg.form }];
+    }
+    if (seg.text.trim().length === 0) return [];
+    return splitOnOdCards(seg.text).flatMap((cardSeg, c): Renderable[] => {
+      if (cardSeg.kind === "card") {
+        return [{ key: `c-${idx}-${c}`, kind: "od-card", card: cardSeg.card }];
+      }
+      if (cardSeg.text.trim().length === 0) return [];
+      return splitSystemReminders(cardSeg.text).map((s, j) => ({
+        key: `t-${idx}-${c}-${j}`,
         kind: s.kind,
         text: s.text,
       }));
-    }
-  );
+    });
+  });
   if (renderable.length === 0 && !live) return null;
   return (
     <div className="prose-block" data-stream-cursor={showStreamCursor && !live ? "true" : undefined}>
@@ -2054,6 +2434,22 @@ function ProseBlock({
             <Fragment key={seg.key}>
               {renderMarkdown(seg.text, { onLinkClick })}
             </Fragment>
+          );
+        }
+        if (seg.kind === "od-card") {
+          return (
+            <OdCardView
+              key={seg.key}
+              card={seg.card}
+              onBrandBrowserAssistConfirm={onBrandBrowserAssistConfirm}
+              instanceScope={[
+                projectId ?? "no-project",
+                conversationId ?? "no-conversation",
+                runId ?? "no-run",
+                assistantMessageId,
+                seg.key,
+              ].join(":")}
+            />
           );
         }
         if (seg.kind === "suppressed-direction") {
@@ -2090,22 +2486,37 @@ function ProseBlock({
 // Chat-side banner that points to the right-hand Questions tab where discovery
 // forms live. The chat column always stays compact: no inline form preview,
 // answered or not.
-function QuestionsBanner({ onOpen }: { onOpen?: () => void }) {
+function QuestionsBanner({
+  onOpen,
+  answered = false,
+}: {
+  onOpen?: () => void;
+  answered?: boolean;
+}) {
   const t = useT();
+  // Once the form has been answered there is nothing left to open, so the
+  // banner becomes a non-interactive "done" marker: no chevron affordance, no
+  // click target, muted styling.
   return (
     <button
       type="button"
-      className="questions-banner"
+      className={`questions-banner${answered ? " questions-banner-answered" : ""}`}
       data-testid="questions-banner"
-      onClick={() => onOpen?.()}
+      data-answered={answered ? "true" : undefined}
+      disabled={answered}
+      onClick={answered ? undefined : () => onOpen?.()}
     >
       <span className="questions-banner-icon" aria-hidden>
-        <Icon name="help-circle" size={15} />
+        <Icon name={answered ? "check" : "help-circle"} size={15} />
       </span>
-      <span className="questions-banner-label">{t("questions.banner")}</span>
-      <span className="questions-banner-cta" aria-hidden>
-        <Icon name="chevron-right" size={14} />
+      <span className="questions-banner-label">
+        {answered ? t("questions.bannerAnswered") : t("questions.banner")}
       </span>
+      {answered ? null : (
+        <span className="questions-banner-cta" aria-hidden>
+          <Icon name="chevron-right" size={14} />
+        </span>
+      )}
     </button>
   );
 }
@@ -2127,12 +2538,16 @@ function FormBlock({
   nextUserContent?: string;
   onOpenQuestions?: (request?: QuestionFormOpenRequest) => void;
 }) {
+  // A "[form answers …]" reply parked right after this message means the form
+  // was already submitted; the banner then renders as an answered/done state.
+  const submittedFromHistory = useMemo(
+    () => (nextUserContent ? parseSubmittedAnswers(form, nextUserContent) : null),
+    [form, nextUserContent],
+  );
   return (
     <QuestionsBanner
+      answered={submittedFromHistory != null}
       onOpen={() => {
-        const submittedFromHistory = nextUserContent
-          ? parseSubmittedAnswers(form, nextUserContent)
-          : null;
         onOpenQuestions?.({
           form,
           messageId: assistantMessageId,
@@ -2307,12 +2722,8 @@ interface ToolItem {
 //   - TodoWrite / todowrite: the input replaces the previous list, so the
 //     latest call is the only one worth showing; older identical or
 //     superseded snapshots are pure duplication.
-//   - AskUserQuestion / ask_user_question: claude-code -p auto-errors the
-//     tool and the model retries with identical input until it gives up.
 // Other tool names pass through untouched.
 const SNAPSHOT_TOOL_NAMES = new Set([
-  "AskUserQuestion",
-  "ask_user_question",
   "TodoWrite",
   "todowrite",
   "todo_write",
@@ -2324,11 +2735,9 @@ function dedupeSnapshotToolRetries(items: ToolItem[]): ToolItem[] {
   const allSnapshot = items.every((it) => SNAPSHOT_TOOL_NAMES.has(it.use.name));
   if (!allSnapshot) return items;
   // For TodoWrite specifically, the LATEST call always wins regardless of
-  // input — it is a state replace, not an append. For AskUserQuestion we
-  // group by input so a sequence of distinct questions (rare) renders as
-  // distinct cards. The cheap unifying behavior: keep the last item per
-  // `(name, JSON.stringify(input))` key; for TodoWrite a single name+input
-  // is the snapshot identity, for AskUserQuestion it's the question text.
+  // input — it is a state replace, not an append. The cheap unifying
+  // behavior: keep the last item per `(name, JSON.stringify(input))` key;
+  // for TodoWrite a single name+input is the snapshot identity.
   const lastByKey = new Map<string, ToolItem>();
   for (const it of items) {
     let key: string;
@@ -2490,29 +2899,20 @@ function ToolGroupCard({
   runSucceeded,
   projectFileNames,
   onRequestOpenFile,
-  isLast,
-  onSubmitForm,
-  onAnswerToolUse,
 }: {
   items: ToolItem[];
   runStreaming: boolean;
   runSucceeded: boolean;
   projectFileNames?: Set<string>;
   onRequestOpenFile?: (name: string) => void;
-  isLast?: boolean;
-  onSubmitForm?: (text: string) => void;
-  onAnswerToolUse?: (toolUseId: string, content: string) => Promise<boolean> | boolean;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
 
-  // `claude-code -p` (headless) auto errors `AskUserQuestion` because it
-  // cannot prompt the user, so the model retries the call up to ~4 times
-  // within a single turn. Each retry produces an identical tool_use event,
-  // which used to render as a stack of duplicate question cards. Collapse
-  // consecutive AskUserQuestion uses with identical input to the LAST one
-  // (it has the most up to date tool_use id, which is what we route the
-  // answer against if a backend tool_result wire is added later).
+  // Snapshot-style tools (TodoWrite and friends) replace their whole state on
+  // each call, so a turn that wrote the list several times would otherwise
+  // render a stack of superseded cards. Collapse those retries to the latest
+  // snapshot; every other tool passes through untouched.
   items = dedupeSnapshotToolRetries(items);
 
   // A run of one tool collapses to that tool's card directly so we don't
@@ -2526,9 +2926,6 @@ function ToolGroupCard({
         runSucceeded={runSucceeded}
         projectFileNames={projectFileNames}
         onRequestOpenFile={onRequestOpenFile}
-        isLast={isLast}
-        onSubmitForm={onSubmitForm}
-        onAnswerToolUse={onAnswerToolUse}
       />
     );
   }
@@ -2571,9 +2968,6 @@ function ToolGroupCard({
                 runSucceeded={runSucceeded}
                 projectFileNames={projectFileNames}
                 onRequestOpenFile={onRequestOpenFile}
-                isLast={isLast}
-                onSubmitForm={onSubmitForm}
-                onAnswerToolUse={onAnswerToolUse}
               />
             ))}
           </div>
@@ -2694,14 +3088,28 @@ type Block =
  * single tool-group block so the chat surface stays compact during chains
  * of edits / reads.
  */
-// Drop any tool-group composed entirely of TodoWrite calls. ChatPane
-// renders one canonical TodoCard above the composer using
-// `latestTodosFromConversation`, so leaving the same task list inline in
-// each assistant message just duplicates the view.
-function stripTodoToolGroups(blocks: Block[]): Block[] {
-  return blocks.filter((block) => {
-    if (block.kind !== "tool-group") return true;
-    return !block.items.every((it) => isTodoWriteToolName(it.use.name));
+function placeConversationTodoCard(
+  blocks: Block[],
+  options: { show: boolean; input: unknown | null },
+): Block[] {
+  let placed = false;
+  return blocks.flatMap((block): Block[] => {
+    if (block.kind !== "tool-group") return [block];
+    if (!block.items.every((it) => isTodoWriteToolName(it.use.name))) return [block];
+    if (!options.show || placed) return [];
+    placed = true;
+    const item = block.items[0];
+    if (!item || options.input == null) return [block];
+    return [{
+      ...block,
+      items: [{
+        ...item,
+        use: {
+          ...item.use,
+          input: options.input,
+        },
+      }],
+    }];
   });
 }
 
@@ -2735,40 +3143,6 @@ function suppressDuplicateQuestionForms(blocks: Block[]): Block[] {
       .join("");
     return changed ? { ...block, text: nextText } : block;
   });
-}
-
-// Hide text blocks that follow an `AskUserQuestion` tool use in the same
-// assistant message. Claude tends to also write the same questions as
-// markdown text alongside the tool call. The card already shows the
-// content; the prose is hedge that duplicates and confuses the user.
-function suppressAskUserQuestionFallbackText(blocks: Block[]): Block[] {
-  let seenAskUserQuestion = false;
-  const filtered: Block[] = [];
-  for (const block of blocks) {
-    if (block.kind === "tool-group") {
-      const hasAuq = block.items.some(
-        (it) =>
-          it.use.name === "AskUserQuestion" ||
-          it.use.name === "ask_user_question",
-      );
-      if (hasAuq) seenAskUserQuestion = true;
-      filtered.push(block);
-      continue;
-    }
-    // A still-streaming AskUserQuestion (live block, no persisted tool_use yet)
-    // counts the same as a settled one: hedging text after it is suppressed,
-    // preamble before it is kept.
-    if (block.kind === "live-tool" && isAskUserQuestionName(block.name)) {
-      seenAskUserQuestion = true;
-      filtered.push(block);
-      continue;
-    }
-    if (seenAskUserQuestion && block.kind === "text") {
-      continue;
-    }
-    filtered.push(block);
-  }
-  return filtered;
 }
 
 function buildBlocks(events: AgentEvent[]): Block[] {

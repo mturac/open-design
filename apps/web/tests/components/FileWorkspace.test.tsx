@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DESIGN_FILES_TAB,
@@ -21,40 +21,6 @@ import {
 } from '../../src/providers/registry';
 import type { ChatMessage, ProjectFile, ProjectFolder } from '../../src/types';
 
-vi.mock('../../src/components/AmrGuidance', () => ({
-  AmrGuidance: ({
-    errorCode,
-    projectId,
-    projectKind,
-    conversationId,
-    assistantMessageId,
-    runId,
-    onActivate,
-  }: {
-    errorCode: string;
-    projectId: string;
-    projectKind: string | null;
-    conversationId: string | null;
-    assistantMessageId: string;
-    runId: string | null;
-    onActivate?: (() => void) | undefined;
-  }) => (
-    <div
-      data-testid="mock-amr-guidance"
-      data-error-code={errorCode}
-      data-project-id={projectId}
-      data-project-kind={projectKind ?? ''}
-      data-conversation-id={conversationId ?? ''}
-      data-assistant-message-id={assistantMessageId}
-      data-run-id={runId ?? ''}
-    >
-      <button type="button" data-testid="mock-amr-guidance-activate" onClick={onActivate}>
-        Switch to AMR
-      </button>
-    </div>
-  ),
-}));
-
 vi.mock('../../src/providers/registry', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/registry')>(
     '../../src/providers/registry',
@@ -63,6 +29,7 @@ vi.mock('../../src/providers/registry', async () => {
     ...actual,
     fetchProjectFileText: vi.fn(),
     uploadProjectFiles: vi.fn(),
+    writeProjectBase64File: vi.fn(),
     writeProjectTextFile: vi.fn(),
     fetchProjectFolders: vi.fn().mockResolvedValue([]),
   };
@@ -73,18 +40,63 @@ vi.mock('../../src/components/DesignBrowserPanel', () => ({
     initialIconUrl,
     initialTitle,
     initialUrl,
+    navigateRequest,
+    onPageSnapshotToast,
   }: {
     initialIconUrl?: string;
     initialTitle?: string;
     initialUrl?: string;
+    navigateRequest?: { url: string; nonce: number };
+    onPageSnapshotToast?: (event: {
+      actionFileName?: string;
+      actionLabel?: string;
+      actionTarget?: 'design-files' | 'file';
+      elapsedSeconds?: number;
+      message: string;
+      status: 'loading' | 'success' | 'error' | 'canceled';
+      tabId: string;
+      ttlMs?: number;
+    }) => void;
   }) => (
     <div
       data-testid="design-browser-panel"
       data-initial-icon-url={initialIconUrl ?? ''}
       data-initial-title={initialTitle ?? ''}
       data-initial-url={initialUrl ?? ''}
-    />
+      data-navigate-url={navigateRequest?.url ?? ''}
+      data-navigate-nonce={navigateRequest?.nonce ?? ''}
+    >
+      <button
+        type="button"
+        data-testid="emit-browser-snapshot-success"
+        onClick={() => onPageSnapshotToast?.({
+          actionFileName: 'browser-archive/example/manifest.json',
+          actionLabel: 'View Design Files',
+          actionTarget: 'design-files',
+          elapsedSeconds: 0,
+          message: 'Saved page snapshot (HTML + CSS).',
+          status: 'success',
+          tabId: '__browser__:1',
+          ttlMs: 8000,
+        })}
+      >
+        emit snapshot success
+      </button>
+    </div>
   ),
+  labelFromUrl: (url: string) => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '') || url;
+    } catch {
+      return url;
+    }
+  },
+  normalizeBrowserAddress: (rawAddress: string) => {
+    const value = rawAddress.trim();
+    if (/^https?:\/\//i.test(value)) return value;
+    if (/^[\w.-]+\.[a-z]{2,}/i.test(value)) return `https://${value}`;
+    return value || 'about:blank';
+  },
 }));
 
 vi.mock('../../src/components/workspace/TerminalViewer', () => ({
@@ -92,6 +104,63 @@ vi.mock('../../src/components/workspace/TerminalViewer', () => ({
     <div data-testid="terminal-viewer">{terminalId}</div>
   ),
 }));
+
+const { excalidrawWorkspaceMock } = vi.hoisted(() => ({
+  excalidrawWorkspaceMock: {
+    lastProps: null as Record<string, any> | null,
+  },
+}));
+
+vi.mock('@excalidraw/excalidraw', async () => {
+  const React = await import('react');
+  const MainMenu = Object.assign(
+    (props: Record<string, any>) => React.createElement('div', null, props.children),
+    {
+      Item: ({ children, disabled, icon, onClick, ...rest }: Record<string, any>) => React.createElement(
+        'button',
+        {
+          ...rest,
+          type: 'button',
+          disabled,
+          onClick,
+        },
+        icon,
+        children,
+      ),
+      DefaultItems: {
+        SearchMenu: () => null,
+        Help: () => null,
+        ClearCanvas: () => null,
+        ChangeCanvasBackground: () => null,
+      },
+      Separator: () => null,
+    },
+  );
+  return {
+    Excalidraw: (props: Record<string, any>) => {
+      excalidrawWorkspaceMock.lastProps = props;
+      React.useEffect(() => {
+        props.excalidrawAPI?.({
+          getSceneElementsIncludingDeleted: () => [{ id: 'workspace-element', type: 'freedraw', isDeleted: false }],
+          getAppState: () => ({ viewBackgroundColor: '#ffffff' }),
+          getFiles: () => ({}),
+          updateScene: vi.fn(),
+          setOpenDialog: vi.fn(),
+        });
+      }, [props]);
+      return React.createElement(
+        'div',
+        { 'data-testid': 'excalidraw' },
+        React.createElement('canvas'),
+        props.renderTopRightUI?.(false, {}),
+        props.children,
+      );
+    },
+    MainMenu,
+    convertToExcalidrawElements: vi.fn((elements: unknown[]) => elements),
+    exportToBlob: vi.fn(async () => new Blob(['mock image'], { type: 'image/png' })),
+  };
+});
 
 // Records the `folders` prop DesignFilesPanel receives on EVERY render (still
 // renders the real component). Lets a test observe the first render after a
@@ -135,8 +204,13 @@ beforeAll(() => {
   };
 });
 
+beforeEach(() => {
+  mockedFetchProjectFileText.mockResolvedValue('');
+});
+
 afterEach(() => {
   cleanup();
+  excalidrawWorkspaceMock.lastProps = null;
   if (root) {
     act(() => root?.unmount());
     root = null;
@@ -171,40 +245,6 @@ function workspaceFile(name: string): ProjectFile {
     mtime: 1700000000,
     kind: name.endsWith('.html') ? 'html' : 'text',
     mime: name.endsWith('.html') ? 'text/html' : 'text/plain',
-  };
-}
-
-function failedAssistantMessage(
-  code: string,
-  agentId: string,
-  detail = 'Recovered upstream failure',
-): ChatMessage {
-  return {
-    id: `msg-${code.toLowerCase()}`,
-    role: 'assistant',
-    content: '',
-    createdAt: 1700000000,
-    startedAt: 1700000000,
-    runId: `run-${code.toLowerCase()}`,
-    runStatus: 'failed',
-    agentId,
-    preTurnFileNames: [],
-    events: [{ kind: 'status', label: 'error', detail, code }],
-  };
-}
-
-function generatingAssistantMessage(): ChatMessage {
-  return {
-    id: 'msg-generating',
-    role: 'assistant',
-    content: '',
-    createdAt: 1700000000,
-    startedAt: 1700000000,
-    runId: 'run-generating',
-    runStatus: 'running',
-    agentId: 'claude',
-    preTurnFileNames: [],
-    events: [{ kind: 'status', label: 'thinking' }],
   };
 }
 
@@ -335,6 +375,53 @@ describe('FileWorkspace upload input', () => {
     expect(markup).not.toContain('accept=');
   });
 
+  it('auto-saves a newly created sketch into project files', async () => {
+    const onRefreshFiles = vi.fn();
+    const onTabsStateChange = vi.fn();
+    mockedWriteProjectTextFile.mockImplementation(async (_projectId, name) => ({
+      name,
+      path: name,
+      type: 'file',
+      size: 128,
+      mtime: 1710000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    }));
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[]}
+        liveArtifacts={[]}
+        onRefreshFiles={onRefreshFiles}
+        isDeck={false}
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={onTabsStateChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('design-files-empty-new-sketch'));
+
+    await waitFor(() => expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(1));
+    const [projectId, name, content] = mockedWriteProjectTextFile.mock.calls[0]!;
+    expect(projectId).toBe('project-1');
+    expect(name).toMatch(/^sketch-.*\.sketch\.json$/);
+    expect(JSON.parse(content as string)).toMatchObject({
+      type: 'excalidraw',
+      version: 2,
+    });
+    await waitFor(() => expect(onRefreshFiles).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(onTabsStateChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tabs: [name],
+          active: name,
+        }),
+      ),
+    );
+  });
+
   it('hides upload failure details during in-panel preview and restores them after closing preview', async () => {
     mockedUploadProjectFiles.mockRejectedValueOnce(new Error('storage offline'));
 
@@ -456,7 +543,7 @@ describe('FileWorkspace upload input', () => {
       />,
     );
 
-    expect(container.querySelector('.df-breadcrumb-current')?.textContent).toBe('project');
+    expect(container.querySelector('.df-breadcrumb-current')?.textContent).toBe('Project');
     expect(screen.getByTestId('design-file-row-home.html')).toBeTruthy();
   });
 
@@ -567,7 +654,7 @@ describe('FileWorkspace upload input', () => {
     const onUploadFiles = vi.fn();
     const { container } = renderDesignFilesPanel({ onUploadFiles });
 
-    fireEvent.drop(container.querySelector('.df-drop')!, {
+    fireEvent.drop(container.querySelector('.df-body')!, {
       dataTransfer: unreadableDropDataTransfer([fallbackFile]),
     });
 
@@ -575,11 +662,56 @@ describe('FileWorkspace upload input', () => {
     expect(screen.queryByTestId('upload-error-banner')).toBeNull();
   });
 
+  it('uploads files pasted from the clipboard in Design Files', () => {
+    const pastedFile = new File(['mock'], 'clipboard.png', { type: 'image/png' });
+    const onUploadFiles = vi.fn();
+    const onClearUploadError = vi.fn();
+    renderDesignFilesPanel({ onUploadFiles, onClearUploadError });
+
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        files: [pastedFile],
+        items: [],
+      },
+    });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onClearUploadError).toHaveBeenCalledTimes(1);
+    expect(onUploadFiles).toHaveBeenCalledWith([pastedFile]);
+  });
+
+  it('does not steal clipboard files from text inputs', () => {
+    const pastedFile = new File(['mock'], 'clipboard.png', { type: 'image/png' });
+    const onUploadFiles = vi.fn();
+    renderDesignFilesPanel({ onUploadFiles });
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+
+    try {
+      const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+      Object.defineProperty(event, 'clipboardData', {
+        value: {
+          files: [pastedFile],
+          items: [],
+        },
+      });
+      textarea.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(onUploadFiles).not.toHaveBeenCalled();
+    } finally {
+      textarea.remove();
+    }
+  });
+
   it('shows a recoverable read error when a dragged entry disappears before import', async () => {
     const onUploadFiles = vi.fn();
     const { container } = renderDesignFilesPanel({ onUploadFiles });
 
-    fireEvent.drop(container.querySelector('.df-drop')!, {
+    fireEvent.drop(container.querySelector('.df-body')!, {
       dataTransfer: unreadableDropDataTransfer(),
     });
 
@@ -637,6 +769,26 @@ describe('FileWorkspace upload input', () => {
     );
   });
 
+  it('keeps the Design Files tab as the first workspace tab before opened files', () => {
+    const markup = renderToStaticMarkup(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[workspaceFile('artifact.html')]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['artifact.html'], active: 'artifact.html' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('class="ws-tabs-bar"');
+    expect(markup).toMatch(
+      /role="tablist"[\s\S]*data-testid="design-files-tab"[\s\S]*artifact\.html/,
+    );
+  });
+
   it('labels the same workspace control as chat restore while focused', () => {
     const markup = renderToStaticMarkup(
       <FileWorkspace
@@ -658,7 +810,10 @@ describe('FileWorkspace upload input', () => {
 });
 
 describe('FileWorkspace launcher tab creation', () => {
-  it('reports the active Design Files tab as workspace context', async () => {
+  it('does not report a Design Files context for an empty project', async () => {
+    // A brand-new project has no files, live artifacts, or folders. The
+    // composer must not auto-stage a "Design files" chip that points at
+    // nothing, so the active workspace context stays null.
     const onActiveContextChange = vi.fn();
     render(
       <FileWorkspace
@@ -666,6 +821,29 @@ describe('FileWorkspace launcher tab creation', () => {
         projectKind="prototype"
         resolvedDir="/tmp/open-design/project-1"
         files={[]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={vi.fn()}
+        onActiveContextChange={onActiveContextChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onActiveContextChange).toHaveBeenCalled();
+    });
+    expect(onActiveContextChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('reports the active Design Files tab as workspace context once files exist', async () => {
+    const onActiveContextChange = vi.fn();
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        resolvedDir="/tmp/open-design/project-1"
+        files={[workspaceFile('cover.html')]}
         liveArtifacts={[]}
         onRefreshFiles={vi.fn()}
         isDeck={false}
@@ -686,46 +864,28 @@ describe('FileWorkspace launcher tab creation', () => {
     });
   });
 
-  it('appends a new terminal to the latest tab list after parent tabs change', async () => {
-    mockedFetchProjectFileText.mockResolvedValue('');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ terminal: { id: 'term-1' } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
-    const onTabsStateChange = vi.fn();
-    const baseProps: React.ComponentProps<typeof FileWorkspace> = {
-      projectId: 'project-1',
-      projectKind: 'prototype',
-      files: [],
-      liveArtifacts: [],
-      onRefreshFiles: vi.fn(),
-      isDeck: false,
-      tabsState: { tabs: [], active: null },
-      onTabsStateChange,
-    };
-
-    const { rerender } = render(<FileWorkspace {...baseProps} />);
-    rerender(
+  it('hides terminal creation while keeping browser creation available', () => {
+    render(
       <FileWorkspace
-        {...baseProps}
-        tabsState={{ tabs: ['chat:existing'], active: null }}
+        projectId="project-1"
+        projectKind="prototype"
+        files={[]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: [], active: null }}
+        onTabsStateChange={vi.fn()}
       />,
     );
 
     fireEvent.click(screen.getByTestId('workspace-add-tab'));
-    fireEvent.click(await screen.findByRole('button', { name: /New Terminal/i }));
 
-    await waitFor(() => {
-      expect(onTabsStateChange).toHaveBeenCalledWith({
-        tabs: ['chat:existing', 'terminal:term-1'],
-        active: 'terminal:term-1',
-      });
-    });
+    expect(screen.queryByRole('button', { name: /New Terminal/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /New Browser/i })).toBeTruthy();
+    expect(
+      screen.getByText('Sketch rough layouts and notes for the agent to use as design context'),
+    ).toBeTruthy();
+    expect(screen.getByText('Create new')).toBeTruthy();
   });
 
   it('renders terminal and side chat tabs after a Design Files-anchored browser tab', () => {
@@ -769,6 +929,53 @@ describe('FileWorkspace launcher tab creation', () => {
     ]);
   });
 
+  it('opens Design Files from the browser snapshot toast action instead of the manifest file', async () => {
+    const onTabsStateChange = vi.fn();
+    const browserTab = {
+      id: '__browser__:1',
+      insertAfter: '__design_files__',
+      label: 'Browser',
+      title: 'Example',
+      url: 'https://example.com',
+    };
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{
+          tabs: [],
+          active: '__browser__:1',
+          browserTabs: [browserTab],
+        }}
+        onTabsStateChange={onTabsStateChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('emit-browser-snapshot-success'));
+    await screen.findByRole('button', { name: 'View Design Files' });
+    const toastAction = document.querySelector<HTMLButtonElement>('.od-toast-action');
+    if (!toastAction) throw new Error('Could not find browser snapshot toast action');
+    await act(async () => {
+      fireEvent.click(toastAction);
+    });
+
+    await waitFor(() => {
+      expect(onTabsStateChange).toHaveBeenCalledWith({
+        tabs: [],
+        active: DESIGN_FILES_TAB,
+        browserTabs: [browserTab],
+      });
+    });
+    expect(onTabsStateChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ active: 'browser-archive/example/manifest.json' }),
+    );
+  });
+
   it('anchors a new browser after the visible tab tail', async () => {
     const onTabsStateChange = vi.fn();
     const rootBrowserTab = {
@@ -807,101 +1014,6 @@ describe('FileWorkspace launcher tab creation', () => {
             id: '__browser__:2',
             insertAfter: 'terminal:term-1',
             label: 'Browser 2',
-          },
-        ],
-      });
-    });
-  });
-
-  it('appends a new browser after stale-anchor browser tabs', async () => {
-    const onTabsStateChange = vi.fn();
-    const staleBrowserTab = {
-      id: '__browser__:1',
-      insertAfter: 'deleted.html',
-      label: 'Browser',
-    };
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('cover.html')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{
-          tabs: ['cover.html'],
-          active: 'cover.html',
-          browserTabs: [staleBrowserTab],
-        }}
-        onTabsStateChange={onTabsStateChange}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('workspace-add-tab'));
-    fireEvent.click(await screen.findByRole('button', { name: /New Browser/i }));
-
-    await waitFor(() => {
-      expect(onTabsStateChange).toHaveBeenCalledWith({
-        tabs: ['cover.html'],
-        active: '__browser__:2',
-        browserTabs: [
-          staleBrowserTab,
-          {
-            id: '__browser__:2',
-            insertAfter: '__browser__:1',
-            label: 'Browser 2',
-          },
-        ],
-      });
-    });
-  });
-
-  it('reanchors stale browser tabs before appending a new terminal', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ terminal: { id: 'term-2' } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
-    const onTabsStateChange = vi.fn();
-    const staleBrowserTab = {
-      id: '__browser__:1',
-      insertAfter: 'deleted.html',
-      label: 'Browser',
-    };
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('cover.html')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{
-          tabs: ['cover.html'],
-          active: 'cover.html',
-          browserTabs: [staleBrowserTab],
-        }}
-        onTabsStateChange={onTabsStateChange}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId('workspace-add-tab'));
-    fireEvent.click(await screen.findByRole('button', { name: /New Terminal/i }));
-
-    await waitFor(() => {
-      expect(onTabsStateChange).toHaveBeenCalledWith({
-        tabs: ['cover.html', 'terminal:term-2'],
-        active: 'terminal:term-2',
-        browserTabs: [
-          {
-            ...staleBrowserTab,
-            insertAfter: 'cover.html',
           },
         ],
       });
@@ -1087,6 +1199,44 @@ describe('FileWorkspace launcher tab creation', () => {
     });
   });
 
+  it('creates and navigates a browser tab from a browser open request', async () => {
+    const onTabsStateChange = vi.fn();
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[workspaceFile('cover.html')]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['cover.html'], active: 'cover.html' }}
+        browserOpenRequest={{ tabId: '__browser__:1', url: 'https://economist.com/', nonce: 7 }}
+        onTabsStateChange={onTabsStateChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onTabsStateChange).toHaveBeenCalledWith({
+        tabs: ['cover.html'],
+        active: '__browser__:1',
+        browserTabs: [
+          {
+            id: '__browser__:1',
+            insertAfter: 'cover.html',
+            label: 'Browser',
+            title: 'economist.com',
+            url: 'https://economist.com/',
+          },
+        ],
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('design-browser-panel').getAttribute('data-navigate-url'))
+        .toBe('https://economist.com/');
+    });
+  });
+
   it('opens a share request without dropping existing browser tabs', async () => {
     const onTabsStateChange = vi.fn();
     const browserTabs = [
@@ -1108,6 +1258,35 @@ describe('FileWorkspace launcher tab creation', () => {
         isDeck={false}
         tabsState={{ tabs: ['cover.html'], active: '__browser__:1', browserTabs }}
         shareRequest={{ name: 'landing.html', nonce: 1 }}
+        onTabsStateChange={onTabsStateChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onTabsStateChange).toHaveBeenCalledWith({
+        tabs: ['cover.html', 'landing.html'],
+        active: 'landing.html',
+        browserTabs,
+      });
+    });
+  });
+
+  it('opens and activates the target file for a download request', async () => {
+    const onTabsStateChange = vi.fn();
+    const browserTabs = [
+      { id: '__browser__:1', label: 'Browser 1', title: 'Dribbble', url: 'https://dribbble.com/' },
+    ];
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[workspaceFile('cover.html'), workspaceFile('landing.html')]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['cover.html'], active: '__browser__:1', browserTabs }}
+        downloadRequest={{ name: 'landing.html', nonce: 1 }}
         onTabsStateChange={onTabsStateChange}
       />,
     );
@@ -1179,273 +1358,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active: 'Web Prototype mutuals-v2.html',
       });
     });
-  });
-});
-
-describe('FileWorkspace generation failure recovery', () => {
-  it('surfaces authorize-and-retry on the failed preview surface for AMR auth failures', () => {
-    const onAuthorizeAndRetry = vi.fn();
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['generation'], active: 'generation' }}
-        onTabsStateChange={vi.fn()}
-        messages={[failedAssistantMessage('AMR_AUTH_REQUIRED', 'amr', 'AMR auth expired')]}
-        onAuthorizeAndRetry={onAuthorizeAndRetry}
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-stage')).toBeTruthy();
-    expect(screen.getByTestId('generation-preview-authorize').textContent).toContain('Authorize');
-    expect(screen.queryByTestId('mock-amr-guidance')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('generation-preview-authorize'));
-
-    expect(onAuthorizeAndRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-amr_auth_required', agentId: 'amr' }),
-    );
-  });
-
-  it('surfaces the AMR promotion card and retry action for non-AMR rate-limited failures', () => {
-    const onRetry = vi.fn();
-    const onAuthorizeAndRetry = vi.fn();
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['generation'], active: 'generation' }}
-        onTabsStateChange={vi.fn()}
-        messages={[failedAssistantMessage('RATE_LIMITED', 'claude', 'Claude quota exhausted')]}
-        onRetry={onRetry}
-        onAuthorizeAndRetry={onAuthorizeAndRetry}
-        conversationId="conv-1"
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-stage')).toBeTruthy();
-    expect(screen.getByTestId('generation-preview-retry')).toBeTruthy();
-    const guidance = screen.getByTestId('mock-amr-guidance');
-    expect(guidance.getAttribute('data-error-code')).toBe('RATE_LIMITED');
-    expect(guidance.getAttribute('data-project-id')).toBe('project-1');
-    expect(guidance.getAttribute('data-project-kind')).toBe('prototype');
-    expect(guidance.getAttribute('data-conversation-id')).toBe('conv-1');
-    expect(guidance.getAttribute('data-assistant-message-id')).toBe('msg-rate_limited');
-    expect(guidance.getAttribute('data-run-id')).toBe('run-rate_limited');
-
-    fireEvent.click(screen.getByTestId('generation-preview-retry'));
-    fireEvent.click(screen.getByTestId('mock-amr-guidance-activate'));
-
-    expect(onRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-rate_limited', agentId: 'claude' }),
-    );
-    expect(onAuthorizeAndRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-rate_limited', agentId: 'claude' }),
-    );
-  });
-
-  it('suppresses the AMR promotion card for upstream outages while keeping retry available', () => {
-    const onRetry = vi.fn();
-    const onAuthorizeAndRetry = vi.fn();
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['generation'], active: 'generation' }}
-        onTabsStateChange={vi.fn()}
-        messages={[failedAssistantMessage('UPSTREAM_UNAVAILABLE', 'claude', 'Model provider unavailable')]}
-        onRetry={onRetry}
-        onAuthorizeAndRetry={onAuthorizeAndRetry}
-        conversationId="conv-1"
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-stage')).toBeTruthy();
-    expect(screen.getByTestId('generation-preview-retry')).toBeTruthy();
-    expect(screen.queryByTestId('mock-amr-guidance')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('generation-preview-retry'));
-
-    expect(onRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-upstream_unavailable', agentId: 'claude' }),
-    );
-    expect(onAuthorizeAndRetry).not.toHaveBeenCalled();
-  });
-
-  it('surfaces recharge and retry actions on the failed preview surface for AMR balance errors', () => {
-    const onRetry = vi.fn();
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['generation'], active: 'generation' }}
-        onTabsStateChange={vi.fn()}
-        messages={[failedAssistantMessage('AMR_INSUFFICIENT_BALANCE', 'amr', 'AMR balance empty')]}
-        onRetry={onRetry}
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-stage')).toBeTruthy();
-    expect(screen.getByTestId('generation-preview-recharge').textContent).toContain('Top up AMR');
-    expect(screen.getByTestId('generation-preview-retry')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('generation-preview-recharge'));
-    fireEvent.click(screen.getByTestId('generation-preview-retry'));
-
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    const [walletUrl, target, features] = openSpy.mock.calls[0] ?? [];
-    expect(target).toBe('_blank');
-    expect(features).toBe('noopener,noreferrer');
-    const parsedWalletUrl = new URL(String(walletUrl));
-    expect(`${parsedWalletUrl.origin}${parsedWalletUrl.pathname}`).toBe(
-      'https://open-design.ai/amr/wallet',
-    );
-    expect(parsedWalletUrl.searchParams.get('od_origin')).toBe('open_design');
-    expect(parsedWalletUrl.searchParams.get('od_entry_source')).toBe(
-      'generation_preview_recharge',
-    );
-    expect(parsedWalletUrl.searchParams.get('od_entry_id')).toMatch(/^od-amr-/u);
-    expect(Number.isFinite(Date.parse(parsedWalletUrl.searchParams.get('od_entry_at') ?? ''))).toBe(
-      true,
-    );
-    expect(onRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-amr_insufficient_balance', agentId: 'amr' }),
-    );
-  });
-
-  it('wires the terminal auth launcher and retry to the failed assistant for antigravity auth failures', () => {
-    const onRetry = vi.fn();
-    const onLaunchTerminalAuth = vi.fn();
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['generation'], active: 'generation' }}
-        onTabsStateChange={vi.fn()}
-        messages={[failedAssistantMessage('AGENT_AUTH_REQUIRED', 'antigravity', 'Sign in with agy first')]}
-        onRetry={onRetry}
-        onLaunchTerminalAuth={onLaunchTerminalAuth}
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-launch-terminal')).toBeTruthy();
-    expect(screen.getByTestId('generation-preview-retry')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('generation-preview-launch-terminal'));
-    fireEvent.click(screen.getByTestId('generation-preview-retry'));
-
-    expect(onLaunchTerminalAuth).toHaveBeenCalledTimes(1);
-    expect(onRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-agent_auth_required', agentId: 'antigravity' }),
-    );
-  });
-
-  it('wires the terminal model-switch launcher and retry to the failed assistant for antigravity rate limits', () => {
-    const onRetry = vi.fn();
-    const onLaunchTerminalAuth = vi.fn();
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['generation'], active: 'generation' }}
-        onTabsStateChange={vi.fn()}
-        messages={[failedAssistantMessage('RATE_LIMITED', 'antigravity', 'Switch agy models in the terminal')]}
-        onRetry={onRetry}
-        onLaunchTerminalAuth={onLaunchTerminalAuth}
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-launch-terminal')).toBeTruthy();
-    expect(screen.getByTestId('generation-preview-retry')).toBeTruthy();
-    expect(screen.queryByTestId('mock-amr-guidance')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('generation-preview-launch-terminal'));
-    fireEvent.click(screen.getByTestId('generation-preview-retry'));
-
-    expect(onLaunchTerminalAuth).toHaveBeenCalledTimes(1);
-    expect(onRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'msg-rate_limited', agentId: 'antigravity' }),
-    );
-  });
-
-  // Regression guard for #3516: the giant Lexical-composer merge added an
-  // `activeTab !== DESIGN_FILES_TAB` clause to `showGenerationPreview`, which
-  // suppressed the generation progress card on the design-files tab — the
-  // default landing tab. While a run is in flight and no previewable artifact
-  // exists yet, the progress card must take priority over the empty
-  // "Creations will appear here" file list instead of being hidden behind it.
-  it('keeps the generation preview on the design-files tab while generating with no artifacts yet', () => {
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        streaming
-        tabsState={{ tabs: [], active: DESIGN_FILES_TAB }}
-        onTabsStateChange={vi.fn()}
-        messages={[generatingAssistantMessage()]}
-      />,
-    );
-
-    expect(screen.getByTestId('generation-preview-stage')).toBeTruthy();
-  });
-
-  // The override above is scoped to the *empty* design-files tab. A populated
-  // project must keep its file browser while a run is in flight instead of
-  // having the generation card hijack the tab — otherwise the fresh-project fix
-  // would regress browsing for everyone with existing files.
-  it('keeps the file browser on a populated design-files tab while a run is active', async () => {
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('index.html')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        streaming
-        tabsState={{ tabs: [], active: DESIGN_FILES_TAB }}
-        onTabsStateChange={vi.fn()}
-        messages={[generatingAssistantMessage()]}
-      />,
-    );
-
-    expect(await screen.findByText('index.html')).toBeTruthy();
-    expect(screen.queryByTestId('generation-preview-stage')).toBeNull();
   });
 });
 
@@ -1902,6 +1814,103 @@ describe('scrollWorkspaceTabsWithWheel', () => {
 });
 
 describe('FileWorkspace sketch save', () => {
+  it('opens a persisted sketch through the editor path without rendering the static preview first', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [{ id: 'box', type: 'rectangle', isDeleted: false }],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+      }),
+    );
+
+    const { container } = render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[file]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Loading sketch…')).toBeTruthy();
+    expect(container.querySelector('[data-testid="sketch-preview-svg"]')).toBeNull();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    });
+
+    expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(1);
+    expect(mockedFetchProjectFileText).toHaveBeenCalledWith('project-1', 'test.sketch.json');
+    expect(container.querySelector('[data-testid="sketch-preview-svg"]')).toBeNull();
+  });
+
+  it('preloads persisted sketches before the tab is opened', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [{ id: 'box', type: 'rectangle', isDeleted: false }],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+      }),
+    );
+
+    const baseProps: React.ComponentProps<typeof FileWorkspace> = {
+      projectId: 'project-1',
+      projectKind: 'prototype',
+      files: [file],
+      liveArtifacts: [],
+      onRefreshFiles: vi.fn(),
+      isDeck: false,
+      tabsState: { tabs: [], active: null },
+      onTabsStateChange: vi.fn(),
+    };
+    const { rerender } = render(
+      <FileWorkspace {...baseProps} />,
+    );
+
+    await waitFor(() => {
+      expect(mockedFetchProjectFileText).toHaveBeenCalledWith('project-1', 'test.sketch.json');
+    });
+
+    rerender(
+      <FileWorkspace
+        {...baseProps}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+      />,
+    );
+
+    expect(screen.queryByText('Loading sketch…')).toBeNull();
+    expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps saving state visible for at least 500ms', async () => {
     // Simulate user doing some edits in the workspace
     const file: ProjectFile = {
@@ -1967,10 +1976,388 @@ describe('FileWorkspace sketch save', () => {
     expect(btn.textContent).not.toBe('Saving…');
     expect(btn.querySelector('svg')).not.toBeNull();
   });
+
+  it('autosaves an empty sketch when clear happens before a pending sketch autosave', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+      }),
+    );
+    mockedWriteProjectTextFile.mockResolvedValue(file);
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[file]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    });
+
+    vi.useFakeTimers();
+    const props = excalidrawWorkspaceMock.lastProps;
+    if (!props?.onChange) throw new Error('expected Excalidraw onChange');
+
+    act(() => {
+      props.onChange(
+        [{ id: 'baseline', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+      props.onChange(
+        [{ id: 'drawn-before-clear', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+    });
+
+    const clearButton = screen.getByRole('button', { name: 'Clear' }) as HTMLButtonElement;
+    expect(clearButton.disabled).toBe(false);
+    act(() => {
+      fireEvent.click(clearButton);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+    });
+
+    expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(1);
+    const savedText = mockedWriteProjectTextFile.mock.calls[0]?.[2];
+    if (typeof savedText !== 'string') throw new Error('expected saved sketch JSON');
+    const saved = JSON.parse(savedText) as { elements?: unknown[] };
+    expect(saved.elements).toEqual([]);
+  });
+
+  it('serializes overlapping sketch autosaves so the latest scene wins', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+    let resolveFirstSave!: (file: ProjectFile) => void;
+    const firstSave = new Promise<ProjectFile>((resolve) => {
+      resolveFirstSave = resolve;
+    });
+    const savedTexts: string[] = [];
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+      }),
+    );
+    mockedWriteProjectTextFile.mockImplementation(async (_projectId, _name, text) => {
+      savedTexts.push(text);
+      return savedTexts.length === 1 ? firstSave : file;
+    });
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[file]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    });
+
+    vi.useFakeTimers();
+    const props = excalidrawWorkspaceMock.lastProps;
+    if (!props?.onChange) throw new Error('expected Excalidraw onChange');
+
+    act(() => {
+      props.onChange(
+        [{ id: 'baseline', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+      props.onChange(
+        [{ id: 'autosave-a', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+    });
+
+    expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      props.onChange(
+        [{ id: 'autosave-b', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+    });
+
+    expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveFirstSave(file);
+      await firstSave;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(2);
+    const firstSaved = JSON.parse(savedTexts[0]!) as { elements?: Array<{ id?: string }> };
+    const secondSaved = JSON.parse(savedTexts[1]!) as { elements?: Array<{ id?: string }> };
+    expect(firstSaved.elements?.[0]?.id).toBe('autosave-a');
+    expect(secondSaved.elements?.[0]?.id).toBe('autosave-b');
+  });
+
+  it('does not wire Excalidraw library item changes into sketch autosave', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+        libraryItems: [],
+      }),
+    );
+    mockedWriteProjectTextFile.mockResolvedValue(file);
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[file]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    });
+
+    const props = excalidrawWorkspaceMock.lastProps;
+    expect(props?.onLibraryChange).toBeUndefined();
+    expect(props?.initialData?.libraryItems).toBeUndefined();
+    expect(mockedWriteProjectTextFile).not.toHaveBeenCalled();
+  });
+
+  it('flushes pending sketch autosaves when the workspace unmounts before debounce', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+        libraryItems: [],
+      }),
+    );
+    mockedWriteProjectTextFile.mockResolvedValue(file);
+
+    const { unmount } = render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[file]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    });
+
+    const props = excalidrawWorkspaceMock.lastProps;
+    if (!props?.onChange) throw new Error('expected Excalidraw onChange');
+
+    act(() => {
+      props.onChange([], { viewBackgroundColor: '#ffffff' }, {});
+      props.onChange(
+        [{ id: 'scene-before-unmount', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+      unmount();
+    });
+
+    await waitFor(() => {
+      expect(mockedWriteProjectTextFile).toHaveBeenCalledTimes(1);
+    });
+    const savedText = mockedWriteProjectTextFile.mock.calls[0]?.[2];
+    if (typeof savedText !== 'string') throw new Error('expected saved sketch JSON');
+    const saved = JSON.parse(savedText) as { elements?: Array<{ id?: string }>; libraryItems?: unknown[] };
+    expect(saved.elements?.map((item) => item.id)).toEqual(['scene-before-unmount']);
+    expect(saved.libraryItems).toBeUndefined();
+  });
+
+  it('preserves a newer sketch scene while its autosave is still debouncing', async () => {
+    const file: ProjectFile = {
+      name: 'test.sketch.json',
+      path: 'test.sketch.json',
+      type: 'file',
+      size: 100,
+      mtime: 1700000000,
+      kind: 'sketch',
+      mime: 'application/json',
+    };
+    const writes: Array<{
+      text: string;
+      resolve: (file: ProjectFile | null) => void;
+    }> = [];
+
+    mockedFetchProjectFileText.mockResolvedValue(
+      JSON.stringify({
+        type: 'excalidraw',
+        version: 2,
+        elements: [],
+        appState: { viewBackgroundColor: '#ffffff' },
+        files: {},
+      }),
+    );
+    mockedWriteProjectTextFile.mockImplementation((_projectId, _name, text) => new Promise((resolve) => {
+      if (typeof text !== 'string') throw new Error('expected saved sketch JSON');
+      writes.push({ text, resolve });
+    }));
+
+    render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[file]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['test.sketch.json'], active: 'test.sketch.json' }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('excalidraw')).toBeTruthy();
+    });
+
+    vi.useFakeTimers();
+    const props = excalidrawWorkspaceMock.lastProps;
+    if (!props?.onChange) throw new Error('expected Excalidraw onChange');
+
+    act(() => {
+      props.onChange(
+        [{ id: 'baseline', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+      props.onChange(
+        [{ id: 'older-scene', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+    });
+    expect(writes).toHaveLength(1);
+
+    act(() => {
+      props.onChange(
+        [{ id: 'latest-scene', type: 'rectangle', isDeleted: false }],
+        { viewBackgroundColor: '#ffffff' },
+        {},
+      );
+    });
+
+    await act(async () => {
+      writes[0]?.resolve(file);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(writes).toHaveLength(2);
+
+    await act(async () => {
+      writes[1]?.resolve(file);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const firstSaved = JSON.parse(writes[0]?.text ?? '{}') as { elements?: Array<{ id?: string }> };
+    const latestSaved = JSON.parse(writes[1]?.text ?? '{}') as { elements?: Array<{ id?: string }> };
+    expect(firstSaved.elements?.map((element) => element.id)).toEqual(['older-scene']);
+    expect(latestSaved.elements?.map((element) => element.id)).toEqual(['latest-scene']);
+  });
 });
 
 describe('FileWorkspace add-module menu', () => {
-  it('opens the add-module menu so the + button reveals the Browser option', () => {
+  it('opens the add-module menu with Browser available and Terminal hidden', () => {
     render(
       <FileWorkspace
         projectId="project-1"
@@ -1995,6 +2382,7 @@ describe('FileWorkspace add-module menu', () => {
     const browserItem = screen.getByRole('button', { name: /New Browser/ });
     const menu = browserItem.closest('[data-testid="tab-launcher-menu"]');
     expect(menu).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /New Terminal/ })).toBeNull();
 
     // The tab strip is a horizontal scroll container that also clips
     // vertically, so the "+" button lives outside it in `.ws-add-tab`
@@ -2173,35 +2561,95 @@ describe('FileWorkspace add-module menu', () => {
     });
   });
 
-  it('appends a new browser tab after existing workspace tabs', () => {
+  it('keeps the pinned brand browser tab mounted while another tab is active', () => {
+    const browserTabs = [
+      {
+        id: '__browser__:1',
+        label: 'Browser',
+        title: 'The Economist',
+        url: 'https://www.economist.com/',
+      },
+    ];
+
+    // Without the pin, a browser tab that was never activated this session is
+    // not mounted while a file tab is active, so its live (post-wall) DOM can't
+    // be read — this is the failure the pin fixes.
+    const { unmount } = render(
+      <FileWorkspace
+        projectId="project-1"
+        projectKind="prototype"
+        files={[workspaceFile('brand.html')]}
+        liveArtifacts={[]}
+        onRefreshFiles={vi.fn()}
+        isDeck={false}
+        tabsState={{ tabs: ['brand.html'], active: 'brand.html', browserTabs }}
+        onTabsStateChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('design-browser-panel')).toBeNull();
+    unmount();
+
+    // With the pin, the same inactive browser tab stays mounted so the chat
+    // "Continue extraction" handler can read its post-wall DOM.
     render(
       <FileWorkspace
         projectId="project-1"
         projectKind="prototype"
-        files={[workspaceFile('analysis.html'), workspaceFile('notes.html')]}
+        files={[workspaceFile('brand.html')]}
         liveArtifacts={[]}
         onRefreshFiles={vi.fn()}
         isDeck={false}
-        tabsState={{ tabs: ['analysis.html', 'notes.html'], active: null }}
+        tabsState={{ tabs: ['brand.html'], active: 'brand.html', browserTabs }}
+        pinnedBrowserTabId="__browser__:1"
         onTabsStateChange={vi.fn()}
       />,
     );
-
-    const addButton = screen.getByTestId('workspace-add-tab');
-    act(() => {
-      fireEvent.click(addButton);
-    });
-    act(() => {
-      fireEvent.click(screen.getByRole('button', { name: /New Browser/ }));
-    });
-
-    const tabLabels = screen
-      .getAllByRole('tab')
-      .map((tab) => tab.textContent?.trim() ?? '');
-    const fileIndex = tabLabels.findIndex((label) => label.includes('notes.html'));
-    const browserIndex = tabLabels.findIndex((label) => label === 'Browser');
-
-    expect(fileIndex).toBeGreaterThanOrEqual(0);
-    expect(browserIndex).toBe(fileIndex + 1);
+    const panel = screen.getByTestId('design-browser-panel');
+    expect(panel.dataset.initialTitle).toBe('The Economist');
   });
+
+});
+
+describe('FileWorkspace empty-project generation contract', () => {
+  function assistantMessage(runStatus: 'running' | 'failed'): ChatMessage {
+    return {
+      id: `msg-${runStatus}`,
+      role: 'assistant',
+      content: '',
+      createdAt: 1700000000,
+      startedAt: 1700000000,
+      runId: `run-${runStatus}`,
+      runStatus,
+      agentId: 'claude',
+      preTurnFileNames: [],
+      events: [{ kind: 'status', label: runStatus === 'failed' ? 'error' : 'thinking' }],
+    };
+  }
+
+  // The generation-preview card / transient `generating-tab` were removed: an
+  // empty project keeps the plain `design-files-empty` placeholder for running
+  // AND failed turns, with no card hijacking the surface.
+  it.each(['running', 'failed'] as const)(
+    'keeps the design-files empty placeholder and shows no generation card for a %s turn',
+    (runStatus) => {
+      render(
+        <FileWorkspace
+          projectId="project-1"
+          projectKind="prototype"
+          files={[]}
+          liveArtifacts={[]}
+          onRefreshFiles={vi.fn()}
+          isDeck={false}
+          streaming={runStatus === 'running'}
+          tabsState={{ tabs: [], active: DESIGN_FILES_TAB }}
+          onTabsStateChange={vi.fn()}
+          messages={[assistantMessage(runStatus)]}
+        />,
+      );
+
+      expect(screen.queryByTestId('generating-tab')).toBeNull();
+      expect(screen.queryByTestId('generation-preview-stage')).toBeNull();
+      expect(screen.getByTestId('design-files-empty')).toBeTruthy();
+    },
+  );
 });

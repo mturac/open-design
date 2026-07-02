@@ -18,6 +18,7 @@ import {
   DEFAULT_FAILURE_SOUND_ID,
   DEFAULT_SUCCESS_SOUND_ID,
 } from '../utils/notifications';
+import { randomUUID } from '../utils/uuid';
 
 const STORAGE_KEY = 'open-design:config';
 const CONFIG_MIGRATION_VERSION = 1;
@@ -80,6 +81,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   composio: {},
   agentModels: {},
   agentCliEnv: {},
+  agentCliEnvIntent: {},
   pet: DEFAULT_PET,
   notifications: DEFAULT_NOTIFICATIONS,
   orbit: DEFAULT_ORBIT,
@@ -91,11 +93,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   // remains the one-click opt-out. Without these defaults the gate at
   // `daemon/src/analytics.ts` (`if (telemetry?.metrics !== true) return`)
   // dropped every event fired during onboarding because no consent
-  // existed yet — observed live on the nightly.10 QA run, which left
+  // existed yet — observed live on the prerelease.10 QA run, which left
   // zero `page_view pn=onboarding` rows on PostHog despite the user
-  // completing the flow. `artifactManifest` stays off; the existing
-  // PrivacySection lets the user enable it explicitly.
-  telemetry: { metrics: true, content: true, artifactManifest: false },
+  // completing the flow.
+  telemetry: { metrics: true, content: true },
 };
 
 /** Well-known providers with pre-filled base URLs. */
@@ -190,8 +191,52 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     label: 'Google Gemini',
     protocol: 'google',
     baseUrl: 'https://generativelanguage.googleapis.com',
-    model: 'gemini-2.0-flash',
-    models: ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    model: 'gemini-3.5-flash',
+    models: [
+      'gemini-3.5-flash',
+      'gemini-3.1-pro-preview',
+      'gemini-3-flash-preview',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+    ],
+  },
+  {
+    label: 'SiliconFlow',
+    protocol: 'openai',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    model: 'deepseek-ai/DeepSeek-V3.1',
+    models: [
+      'deepseek-ai/DeepSeek-V3.1',
+      'deepseek-ai/DeepSeek-R1',
+      'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+    ],
+  },
+  {
+    label: 'PPIO',
+    protocol: 'openai',
+    baseUrl: 'https://api.ppinfra.com/v3/openai',
+    model: 'deepseek/deepseek-v3.1',
+    models: ['deepseek/deepseek-v3.1', 'deepseek/deepseek-r1'],
+  },
+  {
+    label: 'NVIDIA',
+    protocol: 'openai',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: 'openai/gpt-oss-120b',
+    models: [
+      'openai/gpt-oss-120b',
+      'meta/llama-3.1-405b-instruct',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+    ],
+  },
+  {
+    label: 'StepFun',
+    protocol: 'openai',
+    baseUrl: 'https://api.stepfun.ai/v1',
+    model: 'step-2-mini',
+    models: ['step-2-mini', 'step-1-8k', 'step-1-32k'],
   },
   {
     label: 'DeepSeek — OpenAI',
@@ -204,6 +249,71 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
       'deepseek-v4-flash',
       'deepseek-v4-pro',
     ],
+  },
+  {
+    label: 'Mistral AI',
+    protocol: 'openai',
+    baseUrl: 'https://api.mistral.ai/v1',
+    model: 'mistral-large-latest',
+    models: ['mistral-large-latest', 'ministral-8b-latest', 'ministral-3b-latest'],
+  },
+  {
+    label: 'xAI',
+    protocol: 'openai',
+    baseUrl: 'https://api.x.ai/v1',
+    model: 'grok-4',
+    models: ['grok-4', 'grok-3', 'grok-3-mini'],
+  },
+  {
+    label: 'Together AI',
+    protocol: 'openai',
+    baseUrl: 'https://api.together.xyz/v1',
+    model: 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+    models: [
+      'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+      'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+      'Qwen/Qwen2.5-Coder-32B-Instruct',
+    ],
+  },
+  {
+    label: 'Hugging Face',
+    protocol: 'openai',
+    baseUrl: 'https://router.huggingface.co/v1',
+    model: 'openai/gpt-oss-120b',
+    models: [
+      'openai/gpt-oss-120b',
+      'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+      'meta-llama/Llama-3.1-8B-Instruct',
+    ],
+  },
+  {
+    label: 'Qwen',
+    protocol: 'openai',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen3-coder-plus'],
+  },
+  {
+    label: 'Volcengine Ark',
+    protocol: 'openai',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    model: 'doubao-seed-1-6',
+    models: ['doubao-seed-1-6', 'doubao-seed-1-6-thinking', 'deepseek-v3'],
+  },
+  {
+    label: 'Baidu Qianfan',
+    protocol: 'openai',
+    baseUrl: 'https://qianfan.baidubce.com/v2',
+    model: 'ernie-4.5-turbo-128k',
+    models: ['ernie-4.5-turbo-128k', 'ernie-4.5-8k-preview'],
+  },
+  {
+    label: 'vLLM',
+    protocol: 'openai',
+    baseUrl: 'http://127.0.0.1:8000/v1',
+    model: 'model',
+    models: ['model', 'llama3', 'qwen3'],
+    requiresApiKey: false,
   },
   {
     label: 'MiniMax — OpenAI',
@@ -226,6 +336,20 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
     baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
     model: 'mimo-v2.5-pro',
     models: ['mimo-v2.5-pro'],
+  },
+  {
+    label: 'Moonshot',
+    protocol: 'openai',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2-0711-preview',
+    models: ['kimi-k2-0711-preview', 'moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+  },
+  {
+    label: 'Zhipu',
+    protocol: 'openai',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4.6',
+    models: ['glm-4.6', 'glm-4-plus', 'glm-4-air'],
   },
   {
     label: 'Ollama Cloud (managed)',
@@ -356,6 +480,36 @@ function isValidOrbitTime(time: string): boolean {
   return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }
 
+function isBedrockRuntimeBaseUrl(baseUrl: string): boolean {
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    return (
+      /^bedrock-runtime(?:-fips)?[.-].*\.amazonaws\.com(?:\.cn)?$/.test(hostname)
+      || /^bedrock-runtime(?:-fips)?[.-].*\.api\.aws$/.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function downgradeUnsupportedChatProtocol(config: AppConfig): boolean {
+  if (
+    config.apiProtocol !== 'bedrock'
+    && !isBedrockRuntimeBaseUrl(config.baseUrl)
+  ) {
+    return false;
+  }
+
+  config.apiProtocol = DEFAULT_CONFIG.apiProtocol;
+  config.apiKey = DEFAULT_CONFIG.apiKey;
+  config.apiVersion = DEFAULT_CONFIG.apiVersion;
+  config.baseUrl = DEFAULT_CONFIG.baseUrl;
+  config.model = DEFAULT_CONFIG.model;
+  config.apiProviderBaseUrl = DEFAULT_CONFIG.apiProviderBaseUrl;
+  delete config.apiProtocolConfigs?.bedrock;
+  return true;
+}
+
 function inferApiProtocol(model: string, baseUrl: string): ApiProtocol {
   try {
     const normalized = (baseUrl || '').toLowerCase();
@@ -411,6 +565,7 @@ export function loadConfig(): AppConfig {
       composio: { ...(parsed.composio ?? {}) },
       agentModels: { ...(parsed.agentModels ?? {}) },
       agentCliEnv: { ...(parsed.agentCliEnv ?? {}) },
+      agentCliEnvIntent: { ...(parsed.agentCliEnvIntent ?? {}) },
       accentColor: normalizeAccentColor(parsed.accentColor) ?? DEFAULT_CONFIG.accentColor,
       pet: normalizePet(parsed.pet),
       notifications: normalizeNotifications(parsed.notifications),
@@ -444,6 +599,9 @@ export function loadConfig(): AppConfig {
       merged.configMigrationVersion = CONFIG_MIGRATION_VERSION;
     }
 
+    const downgradedUnsupportedChatProtocol =
+      downgradeUnsupportedChatProtocol(merged);
+
     // Fixed-origin gateways (e.g. AIHubMix) hide the Base URL field, so a config
     // persisted before the origin was auto-resolved can carry an empty baseUrl.
     // Backfill it here so every consumer (Settings form, top-bar switcher, chat)
@@ -451,6 +609,10 @@ export function loadConfig(): AppConfig {
     // model-list fetch and leaves only the static suggestion list.
     if (merged.apiProtocol) {
       merged.baseUrl = resolveFixedOriginBaseUrl(merged.apiProtocol, merged.baseUrl);
+    }
+
+    if (downgradedUnsupportedChatProtocol) {
+      saveConfig(merged);
     }
 
     return merged;
@@ -660,7 +822,12 @@ const DAEMON_OWNED_KEYS = new Set<keyof AppConfig>([
   'privacyDecisionAt',
 ]);
 
-const AGENT_CLI_SECRET_ENV_KEYS = new Set(['ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'OPENAI_API_KEY']);
+const AGENT_CLI_SECRET_ENV_KEYS = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CODEX_API_KEY',
+  'OPENAI_API_KEY',
+]);
 
 function sanitizeAgentCliEnv(agentCliEnv: AppConfig['agentCliEnv']): AppConfig['agentCliEnv'] {
   if (!agentCliEnv) return agentCliEnv;
@@ -708,6 +875,7 @@ export function mergeDaemonConfig(
     };
   }
   next.agentCliEnv = daemonConfig.agentCliEnv ?? {};
+  next.agentCliEnvIntent = daemonConfig.agentCliEnvIntent ?? {};
   if (daemonConfig.disabledSkills !== undefined) {
     next.disabledSkills = daemonConfig.disabledSkills;
   }
@@ -733,6 +901,30 @@ export function mergeDaemonConfig(
     // existed. If the daemon already has an id or telemetry prefs, the user
     // has resolved the first-run prompt and should not see it again.
     next.privacyDecisionAt = Date.now();
+  }
+  // Default-on reporting. Unless the user has explicitly opted out
+  // (Settings → "Don't share", which persists telemetry.metrics === false
+  // together with installationId: null), an install reports with the
+  // product's default telemetry channels on and carries a stable
+  // installationId. This is the single source of the "Opted out" state:
+  // previously an upgraded or never-prompted install could sit with
+  // telemetry on but no id (the daemon ships a metrics+content default but
+  // never mints an id), which the Settings → Privacy field rendered as
+  // "Opted out" even though the user never declined. We mint the id and
+  // keep the default channels on so the displayed state matches the product
+  // default — the same metrics+content surface the first-run banner's "I
+  // get it" opt-in enables (artifactManifest stays off, as it does there).
+  // This does NOT override an explicit opt-out: metrics === false short-
+  // circuits the whole block, and any channel the user already turned off
+  // is preserved via the nullish-coalesce.
+  const explicitlyOptedOut = next.telemetry?.metrics === false;
+  if (!explicitlyOptedOut && !next.installationId) {
+    next.installationId = randomUUID();
+    next.telemetry = {
+      metrics: true,
+      content: next.telemetry?.content ?? true,
+      artifactManifest: next.telemetry?.artifactManifest ?? false,
+    };
   }
   if (daemonConfig.customInstructions !== undefined) {
     next.customInstructions = daemonConfig.customInstructions ?? undefined;
@@ -848,6 +1040,7 @@ export async function syncConfigToDaemon(
     agentId: config.agentId,
     agentModels: config.agentModels,
     agentCliEnv: config.agentCliEnv,
+    agentCliEnvIntent: config.agentCliEnvIntent,
     skillId: config.skillId,
     designSystemId: config.designSystemId,
     disabledSkills: config.disabledSkills,

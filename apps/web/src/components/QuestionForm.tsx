@@ -19,6 +19,9 @@ interface Props {
   draftAnswers?: Record<string, string | string[]>;
   onReadyChange?: (ready: boolean) => void;
   onDraftChange?: (answers: Record<string, string | string[]>) => void;
+  // Fires on each real user interaction with a single question (locked forms
+  // never reach it). Lets the Questions tab host track chip picks.
+  onAnswerChange?: (questionId: string, value: string | string[]) => void;
   onSubmit?: (text: string, answers: Record<string, string | string[]>) => void;
 }
 
@@ -39,6 +42,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     draftAnswers,
     onReadyChange,
     onDraftChange,
+    onAnswerChange,
     onSubmit,
   },
   ref,
@@ -66,7 +70,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
         } else if (q.defaultValue !== undefined) {
           next[q.id] = canonicalizeQuestionValue(q, q.defaultValue);
         } else {
-          next[q.id] = q.type === 'checkbox' ? [] : '';
+          next[q.id] = emptyQuestionValue(q);
         }
       }
       return changed ? next : prev;
@@ -78,6 +82,7 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     const next = { ...answers, [id]: value };
     setAnswers(next);
     onDraftChange?.(next);
+    onAnswerChange?.(id, value);
   }
 
   function toggleCheckbox(id: string, option: string, maxSelections?: number) {
@@ -89,6 +94,14 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
     const nextAnswers = { ...answers, [id]: next };
     setAnswers(nextAnswers);
     onDraftChange?.(nextAnswers);
+    onAnswerChange?.(id, next);
+  }
+
+  function updateCheckboxCustom(q: QuestionForm['questions'][number], raw: string) {
+    if (locked) return;
+    const current = Array.isArray(answers[q.id]) ? (answers[q.id] as string[]) : [];
+    const fixed = current.filter((entry) => questionValueIsKnown(q, entry));
+    update(q.id, [...fixed, ...splitCustomEntries(raw)]);
   }
 
   function handleSubmit() {
@@ -177,6 +190,15 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                   ))}
                 </div>
               ) : null}
+              {q.type === 'radio' && q.options && shouldRenderCustomChoice(q) ? (
+                <CustomChoiceInput
+                  label={q.customLabel ?? t('qf.customLabel')}
+                  value={customSingleValue(q, value)}
+                  placeholder={q.customPlaceholder ?? t('qf.customPlaceholder')}
+                  disabled={locked}
+                  onChange={(next) => update(q.id, next)}
+                />
+              ) : null}
               {q.type === 'checkbox' && q.options ? (
                 <div className="qf-options">
                   {q.options.map((opt) => {
@@ -204,10 +226,21 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                   })}
                 </div>
               ) : null}
+              {q.type === 'checkbox' && q.options && shouldRenderCustomChoice(q) ? (
+                <CustomChoiceInput
+                  label={q.customLabel ?? t('qf.customLabel')}
+                  value={customCheckboxValue(q, value)}
+                  placeholder={q.customPlaceholder ?? t('qf.customPlaceholder')}
+                  disabled={locked}
+                  onChange={(next) => updateCheckboxCustom(q, next)}
+                />
+              ) : null}
               {q.type === 'select' && q.options ? (
                 <select
                   className="qf-select"
-                  value={typeof value === 'string' ? value : ''}
+                  value={
+                    typeof value === 'string' && questionValueIsKnown(q, value) ? value : ''
+                  }
                   disabled={locked}
                   onChange={(e) => update(q.id, e.target.value)}
                 >
@@ -221,6 +254,15 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                   ))}
                 </select>
               ) : null}
+              {q.type === 'select' && q.options && shouldRenderCustomChoice(q) ? (
+                <CustomChoiceInput
+                  label={q.customLabel ?? t('qf.customLabel')}
+                  value={customSingleValue(q, value)}
+                  placeholder={q.customPlaceholder ?? t('qf.customPlaceholder')}
+                  disabled={locked}
+                  onChange={(next) => update(q.id, next)}
+                />
+              ) : null}
               {q.type === 'text' ? (
                 <input
                   type="text"
@@ -230,6 +272,94 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                   disabled={locked}
                   onChange={(e) => update(q.id, e.target.value)}
                 />
+              ) : null}
+              {q.type === 'number' ? (
+                <input
+                  type="number"
+                  className="qf-input"
+                  value={typeof value === 'string' ? value : ''}
+                  placeholder={q.placeholder}
+                  min={q.min}
+                  max={q.max}
+                  step={q.step}
+                  disabled={locked}
+                  onChange={(e) => update(q.id, e.target.value)}
+                />
+              ) : null}
+              {q.type === 'range' ? (
+                <div className="qf-range-wrap">
+                  <input
+                    type="range"
+                    className="qf-range"
+                    value={typeof value === 'string' && value.trim() ? value : String(q.min ?? 0)}
+                    min={q.min}
+                    max={q.max}
+                    step={q.step}
+                    disabled={locked}
+                    onChange={(e) => update(q.id, e.target.value)}
+                  />
+                  <output className="qf-range-value">
+                    {typeof value === 'string' && value.trim() ? value : String(q.min ?? 0)}
+                  </output>
+                </div>
+              ) : null}
+              {q.type === 'date' || q.type === 'time' || q.type === 'datetime-local' ? (
+                <input
+                  type={q.type}
+                  className="qf-input"
+                  value={typeof value === 'string' ? value : ''}
+                  placeholder={q.placeholder}
+                  disabled={locked}
+                  onChange={(e) => update(q.id, e.target.value)}
+                />
+              ) : null}
+              {q.type === 'color' ? (
+                <input
+                  type="color"
+                  className="qf-color"
+                  value={normalizeColorInputValue(value)}
+                  disabled={locked}
+                  onChange={(e) => update(q.id, e.target.value)}
+                />
+              ) : null}
+              {q.type === 'url' || q.type === 'email' || q.type === 'tel' ? (
+                <input
+                  type={q.type}
+                  className="qf-input"
+                  value={typeof value === 'string' ? value : ''}
+                  placeholder={q.placeholder}
+                  disabled={locked}
+                  onChange={(e) => update(q.id, e.target.value)}
+                />
+              ) : null}
+              {q.type === 'file' ? (
+                <div className="qf-file-wrap">
+                  <input
+                    type="file"
+                    className="qf-file"
+                    multiple={q.multiple}
+                    disabled={locked}
+                    onChange={(e) => {
+                      const names = Array.from(e.target.files ?? []).map((file) => file.name);
+                      update(q.id, q.multiple ? names : names[0] ?? '');
+                    }}
+                  />
+                  {fileValueLabel(value) ? (
+                    <div className="qf-file-summary">{fileValueLabel(value)}</div>
+                  ) : null}
+                </div>
+              ) : null}
+              {q.type === 'switch' ? (
+                <label className="qf-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={value === 'true'}
+                    disabled={locked}
+                    onChange={(e) => update(q.id, e.target.checked ? 'true' : 'false')}
+                  />
+                  <span aria-hidden />
+                </label>
               ) : null}
               {q.type === 'textarea' ? (
                 <textarea
@@ -255,6 +385,15 @@ export const QuestionFormView = forwardRef<QuestionFormHandle, Props>(function Q
                     />
                   ))}
                 </div>
+              ) : null}
+              {q.type === 'direction-cards' && q.cards && q.cards.length > 0 && shouldRenderCustomChoice(q) ? (
+                <CustomChoiceInput
+                  label={q.customLabel ?? t('qf.customLabel')}
+                  value={customSingleValue(q, value)}
+                  placeholder={q.customPlaceholder ?? t('qf.customPlaceholder')}
+                  disabled={locked}
+                  onChange={(next) => update(q.id, next)}
+                />
               ) : null}
             </div>
           );
@@ -292,6 +431,34 @@ function OptionCopy({ option }: { option: FormOption }) {
       <span>{option.label}</span>
       {option.description ? <span className="qf-chip-desc">{option.description}</span> : null}
     </span>
+  );
+}
+
+function CustomChoiceInput({
+  label,
+  value,
+  placeholder,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="qf-custom">
+      <span>{label}</span>
+      <input
+        type="text"
+        className="qf-input"
+        value={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -372,13 +539,17 @@ function buildInitialState(
       out[q.id] = canonicalizeQuestionValue(q, q.defaultValue);
       continue;
     }
-    if (q.type === 'checkbox') {
-      out[q.id] = [];
-    } else {
-      out[q.id] = '';
-    }
+    out[q.id] = emptyQuestionValue(q);
   }
   return out;
+}
+
+function emptyQuestionValue(q: QuestionForm['questions'][number]): string | string[] {
+  if (q.type === 'checkbox') return [];
+  if (q.type === 'switch') return 'false';
+  if (q.type === 'range') return String(q.min ?? 0);
+  if (q.type === 'color') return normalizeColorInputValue('');
+  return '';
 }
 
 function canonicalizeQuestionValue(
@@ -389,6 +560,49 @@ function canonicalizeQuestionValue(
     return value.map((entry) => formOptionValueForLabel(q, entry));
   }
   return formOptionValueForLabel(q, value);
+}
+
+function shouldRenderCustomChoice(q: QuestionForm['questions'][number]): boolean {
+  return q.allowCustom !== false;
+}
+
+function questionValueIsKnown(q: QuestionForm['questions'][number], value: string): boolean {
+  if (q.options?.some((option) => option.value === value || option.label === value)) return true;
+  if (q.cards?.some((card) => card.id === value || card.label === value)) return true;
+  return false;
+}
+
+function customSingleValue(
+  q: QuestionForm['questions'][number],
+  value: string | string[] | undefined,
+): string {
+  if (typeof value !== 'string' || value.length === 0) return '';
+  return questionValueIsKnown(q, value) ? '' : value;
+}
+
+function customCheckboxValue(
+  q: QuestionForm['questions'][number],
+  value: string | string[] | undefined,
+): string {
+  if (!Array.isArray(value)) return '';
+  return value.filter((entry) => !questionValueIsKnown(q, entry)).join(', ');
+}
+
+function splitCustomEntries(raw: string): string[] {
+  return raw
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeColorInputValue(value: string | string[] | undefined): string {
+  if (typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)) return value;
+  return '#000000';
+}
+
+function fileValueLabel(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value.join(', ');
+  return typeof value === 'string' ? value : '';
 }
 
 /**

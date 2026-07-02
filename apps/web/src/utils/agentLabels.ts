@@ -1,11 +1,12 @@
 const AGENT_LABELS: Record<string, string> = {
   aider: 'Aider',
+  amp: 'Amp',
   claude: 'Claude',
   codex: 'Codex',
   devin: 'Devin',
   gemini: 'Gemini',
   opencode: 'OpenCode',
-  amr: 'AMR',
+  amr: 'Open Design',
   'cursor-agent': 'Cursor',
   cursor: 'Cursor',
   qwen: 'Qwen',
@@ -20,6 +21,7 @@ const AGENT_LABELS: Record<string, string> = {
 };
 
 const AGENT_ALIASES: Record<string, string> = {
+  'amp cli': 'amp',
   'claude code': 'claude',
   'codex cli': 'codex',
   'devin for terminal': 'devin',

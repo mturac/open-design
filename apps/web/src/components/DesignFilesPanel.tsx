@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@open-design/components';
 import { useAnalytics } from '../analytics/provider';
 import { trackFileManagerClick } from '../analytics/events';
 import { useT } from '../i18n';
+import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
 import type { Dict } from '../i18n/types';
+import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { projectFileUrl, projectRawUrl } from '../providers/registry';
 import { buildSrcdoc } from '../runtime/srcdoc';
 import type { LiveArtifactWorkspaceEntry, ProjectFile, ProjectFileKind, ProjectFolder } from '../types';
@@ -12,6 +13,7 @@ import {
   FILE_SYSTEM_READ_ERROR_MESSAGE,
   isFileSystemReadError,
 } from '../utils/fileSystemErrors';
+import { isVisualStabilityMode } from '../utils/visualStability';
 import { selectInitialDesignPreviewFile } from './design-files/designArtifacts';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { getPluginFolderCandidates } from './design-files/pluginFolders';
@@ -37,6 +39,9 @@ interface Props {
   // True while the host is reindexing a freshly replaced working dir. Drives
   // a loading overlay so the panel doesn't sit silently on the stale tree.
   reloading?: boolean;
+  // True while the chat agent is generating. The footer swaps its idle
+  // drop/upload hint for the typewriter "tip" line while a run is in flight.
+  running?: boolean;
   files: ProjectFile[];
   // Persisted folders from `/api/projects/:id/folders`, including empty ones
   // that no file lives under. Without these, a folder only appears once a file
@@ -54,6 +59,14 @@ interface Props {
   onUploadFiles: (files: File[]) => void;
   onPaste: () => void;
   onNewSketch: () => void;
+  onOpenBrowser?: () => void;
+  onCreateDesignSystem?: () => void;
+  onCreateDesignSystemFromProject?: () => void;
+  createDesignSystemFromProjectBusy?: boolean;
+  onDuplicateProject?: () => void;
+  duplicateProjectBusy?: boolean;
+  /** Opens the "Select from library" picker to pull registry assets in. */
+  onSelectFromLibrary?: () => void;
   // Reports the folder the panel is currently viewing so the parent can create
   // new files (upload / paste / new sketch / dropped files) under it instead
   // of the project root. Fires whenever the user navigates folders.
@@ -152,6 +165,116 @@ function ActionNoticeView({ notice }: { notice: ActionNotice | null }) {
   );
 }
 
+// Useful-info tips that rotate one at a time in the panel footer, ordered as
+// a loose journey: file basics → feeding context → generating → iterating →
+// exporting/sharing → community. A tip with a `url` renders its typed line as
+// a link to that destination.
+const USEFUL_TIPS: ReadonlyArray<{ key: keyof Dict; url?: string }> = [
+  { key: 'designFiles.usefulInfoTip' },
+  { key: 'designFiles.usefulInfoTip2' },
+  { key: 'designFiles.usefulInfoTip9' },
+  { key: 'designFiles.usefulInfoTip10' },
+  { key: 'designFiles.usefulInfoTip4' },
+  { key: 'designFiles.usefulInfoTip11' },
+  { key: 'designFiles.usefulInfoTip12' },
+  { key: 'designFiles.usefulInfoTip13' },
+  { key: 'designFiles.usefulInfoTip14' },
+  { key: 'designFiles.usefulInfoTip15' },
+  { key: 'designFiles.usefulInfoTip5' },
+  { key: 'designFiles.usefulInfoTip6', url: 'https://discord.gg/mHAjSMV6gz' },
+  { key: 'designFiles.usefulInfoTip7', url: 'https://github.com/nexu-io/open-design' },
+  { key: 'designFiles.usefulInfoTip8', url: 'https://x.com/OpenDesignHQ' },
+  { key: 'designFiles.usefulInfoTip16', url: 'https://www.threads.com/@opendesign.ai' },
+  { key: 'designFiles.usefulInfoTip17', url: 'https://www.instagram.com/opendesign.ai/' },
+  { key: 'designFiles.usefulInfoTip18', url: 'https://www.youtube.com/@Open-Design-ai' },
+  { key: 'designFiles.usefulInfoTip19', url: 'https://www.linkedin.com/company/open-design-ai/' },
+  {
+    key: 'designFiles.usefulInfoTip20',
+    url: 'https://www.xiaohongshu.com/user/profile/691effad000000003002978f',
+  },
+];
+const TIP_TYPE_MS = 32; // per-character typing speed
+const TIP_HOLD_MS = 3800; // pause on a fully-typed tip before advancing
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+// Footer "tip" line that types out one tip at a time (typewriter), holds, then
+// advances to the next — mirroring Claude Design's empty-state hint. Under
+// prefers-reduced-motion the full tip is shown immediately and just cycles.
+function RotatingTip() {
+  const t = useT();
+  const [index, setIndex] = useState(0);
+  const [typed, setTyped] = useState('');
+  // Resolve tips each render but read them through a ref so the typing effect
+  // depends only on `index` — depending on the (re-created) array would reset
+  // the typewriter on every render and never advance.
+  const tipsRef = useRef<string[]>([]);
+  tipsRef.current = USEFUL_TIPS.map(({ key }) => t(key));
+
+  useEffect(() => {
+    const tips = tipsRef.current;
+    const full = tips[index] ?? '';
+    if (isVisualStabilityMode()) {
+      setIndex(0);
+      setTyped(tips[0] ?? '');
+      return;
+    }
+    if (prefersReducedMotion()) {
+      setTyped(full);
+      if (tips.length < 2) return;
+      const hold = window.setTimeout(
+        () => setIndex((i) => (i + 1) % tips.length),
+        TIP_HOLD_MS,
+      );
+      return () => window.clearTimeout(hold);
+    }
+    setTyped('');
+    let i = 0;
+    let holdTimer = 0;
+    const typeTimer = window.setInterval(() => {
+      i += 1;
+      setTyped(full.slice(0, i));
+      if (i >= full.length) {
+        window.clearInterval(typeTimer);
+        if (tips.length < 2) return;
+        holdTimer = window.setTimeout(
+          () => setIndex((p) => (p + 1) % tips.length),
+          TIP_HOLD_MS,
+        );
+      }
+    }, TIP_TYPE_MS);
+    return () => {
+      window.clearInterval(typeTimer);
+      window.clearTimeout(holdTimer);
+    };
+  }, [index]);
+
+  return (
+    <div className="df-useful-info">
+      <div className="df-useful-info-head">
+        <Icon name="sparkles" size={12} />
+        <span className="df-useful-info-label">{t('designFiles.usefulInfoLabel')}</span>
+      </div>
+      <span className="df-useful-info-tip">
+        {USEFUL_TIPS[index]?.url ? (
+          <a className="df-tip-link" href={USEFUL_TIPS[index].url} target="_blank" rel="noreferrer">
+            {typed}
+          </a>
+        ) : (
+          typed
+        )}
+        <span className="df-tip-caret" aria-hidden />
+      </span>
+    </div>
+  );
+}
+
 /**
  * Full-panel browser for a project's `.od/projects/<id>/` folder. Mirrors
  * Claude Design's "Design Files" surface: a single-line toolbar (up / refresh
@@ -164,6 +287,7 @@ export function DesignFilesPanel({
   projectId,
   rootDirName,
   reloading,
+  running = false,
   files,
   folders,
   liveArtifacts,
@@ -176,6 +300,13 @@ export function DesignFilesPanel({
   onUploadFiles,
   onPaste,
   onNewSketch,
+  onOpenBrowser,
+  onCreateDesignSystem,
+  onCreateDesignSystemFromProject,
+  createDesignSystemFromProjectBusy = false,
+  onDuplicateProject,
+  duplicateProjectBusy = false,
+  onSelectFromLibrary,
   uploadError = null,
   onClearUploadError,
   preferredPreviewFile = null,
@@ -194,7 +325,7 @@ export function DesignFilesPanel({
   const dragDepthRef = useRef(0);
   const [hover, setHover] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ name: string; top: number; left: number } | null>(null);
-  const MENU_ESTIMATED_HEIGHT = 145;
+  const MENU_ESTIMATED_HEIGHT = 180;
   const MENU_SAFE_PADDING = 8;
   const [preview, setPreview] = useState<string | null>(null);
   const autoPreviewAppliedRef = useRef(false);
@@ -205,7 +336,10 @@ export function DesignFilesPanel({
   const [sharingFolder, setSharingFolder] = useState<string | null>(null);
   const [installNotice, setInstallNotice] = useState<ActionNotice | null>(null);
   const [renaming, setRenaming] = useState<{ name: string; draft: string; saving: boolean } | null>(null);
+  const [copiedLocalPath, setCopiedLocalPath] = useState<string | null>(null);
   const [currentDir, setCurrentDir] = useState<string>(() => navState?.currentDir ?? '');
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Keep the parent's create-target in sync with the folder being viewed, so
   // uploads / pastes / new sketches / dropped files land in the open folder
@@ -365,6 +499,36 @@ export function DesignFilesPanel({
     };
   }, [menuPos]);
 
+  useEffect(() => {
+    const onClipboardPaste = (event: ClipboardEvent) => {
+      if (shouldIgnoreClipboardFilePaste(event.target)) return;
+      const pastedFiles = filesFromClipboardData(event.clipboardData);
+      if (pastedFiles.length === 0) return;
+      event.preventDefault();
+      setDropReadError(null);
+      onClearUploadError?.();
+      onUploadFiles(pastedFiles);
+    };
+    window.addEventListener('paste', onClipboardPaste);
+    return () => window.removeEventListener('paste', onClipboardPaste);
+  }, [onClearUploadError, onUploadFiles]);
+  useEffect(() => {
+    if (!projectMenuOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && projectMenuRef.current?.contains(target)) return;
+      setProjectMenuOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setProjectMenuOpen(false);
+    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [projectMenuOpen]);
 
   function toggleSelect(name: string) {
     setSelected((prev) => {
@@ -405,6 +569,18 @@ export function DesignFilesPanel({
     const left = Math.max(MENU_SAFE_PADDING, rect.right - 160);
 
     setMenuPos({ name, top, left });
+  }
+
+  async function copyLocalPath(fileName: string) {
+    const localPath = files.find((file) => file.name === fileName)?.localPath;
+    if (!localPath) return;
+    const copied = await copyToClipboard(localPath);
+    if (copied) {
+      setCopiedLocalPath(fileName);
+      window.setTimeout(() => {
+        setCopiedLocalPath((current) => (current === fileName ? null : current));
+      }, 1600);
+    }
   }
 
   function startRename(name: string) {
@@ -490,7 +666,9 @@ export function DesignFilesPanel({
             }
           }}
         >
-          {isSelected ? '☑' : '☐'}
+          <span className="df-row-check-box" aria-hidden>
+            {isSelected ? <Icon name="check" size={12} /> : null}
+          </span>
         </span>
         <span
           className="df-row-icon df-row-openable"
@@ -561,6 +739,13 @@ export function DesignFilesPanel({
           )}
         </div>
         <span
+          className="df-row-size df-row-openable"
+          onClick={() => setPreview(f.name)}
+          onDoubleClick={() => onOpenFile(f.name)}
+        >
+          {humanBytes(f.size)}
+        </span>
+        <span
           className="df-row-time df-row-openable"
           onClick={() => setPreview(f.name)}
           onDoubleClick={() => onOpenFile(f.name)}
@@ -610,6 +795,7 @@ export function DesignFilesPanel({
             </span>
           </button>
         </div>
+        <span className="df-row-size" />
         <span className="df-row-time" />
         <span className="df-row-menu df-row-menu-placeholder" aria-hidden />
       </div>
@@ -697,12 +883,23 @@ export function DesignFilesPanel({
 
   const fileActions = (
     <div className="df-actions">
+      {LIBRARY_UI_VISIBLE && onSelectFromLibrary ? (
+        <button
+          type="button"
+          data-testid="design-files-library-trigger"
+          onClick={onSelectFromLibrary}
+          title={t('designFiles.library.title')}
+        >
+          <Icon name="layers-filled" size={13} />
+          <span>{t('designFiles.library.label')}</span>
+        </button>
+      ) : null}
       <button type="button" onClick={onNewSketch} title={t('designFiles.newSketch')}>
         <Icon name="pencil" size={13} />
         <span>{t('designFiles.newSketch')}</span>
       </button>
       <button type="button" onClick={onPaste} title={t('designFiles.paste.title')}>
-        <Icon name="copy" size={13} />
+        <Icon name="file" size={13} />
         <span>{t('designFiles.paste.label')}</span>
       </button>
       <button
@@ -714,6 +911,63 @@ export function DesignFilesPanel({
         <Icon name="upload" size={13} />
         <span>{t('designFiles.upload.label')}</span>
       </button>
+      {onCreateDesignSystemFromProject || onDuplicateProject ? (
+        <div className="df-project-menu-anchor" ref={projectMenuRef}>
+          <button
+            type="button"
+            className="df-project-menu-trigger"
+            aria-label={t('designFiles.projectMenu')}
+            aria-haspopup="menu"
+            aria-expanded={projectMenuOpen}
+            title={t('designFiles.projectMenu')}
+            onClick={() => setProjectMenuOpen((current) => !current)}
+          >
+            <Icon name="more-horizontal" size={14} />
+          </button>
+          {projectMenuOpen ? (
+            <div className="df-project-menu" role="menu">
+              {onCreateDesignSystemFromProject ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={createDesignSystemFromProjectBusy}
+                  onClick={() => {
+                    trackFileManagerClick(analytics.track, {
+                      page_name: 'file_manager',
+                      area: 'file_manager',
+                      element: 'create_design_system_from_project',
+                    });
+                    setProjectMenuOpen(false);
+                    onCreateDesignSystemFromProject();
+                  }}
+                >
+                  <Icon name={createDesignSystemFromProjectBusy ? 'spinner' : 'blocks'} size={13} />
+                  <span>{t('designFiles.createDesignSystemFromProject')}</span>
+                </button>
+              ) : null}
+              {onDuplicateProject ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={duplicateProjectBusy}
+                  onClick={() => {
+                    trackFileManagerClick(analytics.track, {
+                      page_name: 'file_manager',
+                      area: 'file_manager',
+                      element: 'duplicate_project',
+                    });
+                    setProjectMenuOpen(false);
+                    onDuplicateProject();
+                  }}
+                >
+                  <Icon name={duplicateProjectBusy ? 'spinner' : 'copy'} size={13} />
+                  <span>{t('designFiles.duplicateProject')}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 
@@ -773,7 +1027,28 @@ export function DesignFilesPanel({
           <div className="df-topbar-left">{breadcrumbs}</div>
           <div className="df-topbar-right">{fileActions}</div>
         </div>
-        <div className="df-body">
+        <div
+          className="df-body"
+          onDragEnter={(ev) => {
+            ev.preventDefault();
+            dragDepthRef.current += 1;
+            setDraggingFiles(true);
+          }}
+          onDragOver={(ev) => {
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'copy';
+          }}
+          onDragLeave={(ev) => {
+            if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) {
+              dragDepthRef.current = 0;
+              setDraggingFiles(false);
+              return;
+            }
+            dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+            if (dragDepthRef.current === 0) setDraggingFiles(false);
+          }}
+          onDrop={handleDrop}
+        >
           {visibleUploadError && !preview ? (
             <div className="df-upload-banner" data-testid="upload-error-banner">
               <span>{visibleUploadError}</span>
@@ -834,16 +1109,41 @@ export function DesignFilesPanel({
                 <span className="df-empty-title">
                   {t('designFiles.empty')}
                 </span>
-                <button
-                  type="button"
-                  className="df-empty-cta"
-                  data-testid="design-files-empty-new-sketch"
-                  onClick={onNewSketch}
-                  title={t('designFiles.newSketch')}
-                >
-                  <Icon name="pencil" size={13} />
-                  <span>{t('designFiles.newSketch')}</span>
-                </button>
+                <div className="df-empty-actions">
+                  <button
+                    type="button"
+                    className="df-empty-cta df-empty-cta-primary"
+                    data-testid="design-files-empty-new-sketch"
+                    onClick={onNewSketch}
+                    title={t('designFiles.newSketch')}
+                  >
+                    <Icon name="pencil" size={13} />
+                    <span>{t('designFiles.newSketch')}</span>
+                  </button>
+                  {onOpenBrowser ? (
+                    <button
+                      type="button"
+                      className="df-empty-cta df-empty-cta-secondary"
+                      data-testid="design-files-empty-open-browser"
+                      onClick={onOpenBrowser}
+                      aria-label={t('workspace.newBrowserDescription')}
+                      title={t('workspace.newBrowserDescription')}
+                    >
+                      <Icon name="globe" size={13} />
+                      <span>{t('workspace.newBrowser')}</span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="df-empty-cta df-empty-cta-tertiary"
+                    data-testid="design-files-empty-create-document"
+                    onClick={onPaste}
+                    title={t('designFiles.paste.title')}
+                  >
+                    <Icon name="file" size={13} />
+                    <span>{t('designFiles.paste.label')}</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
@@ -979,36 +1279,29 @@ export function DesignFilesPanel({
               ))}
             </>
           )}
-          <div className="df-useful-info">
-            <span className="df-useful-info-label">{t('designFiles.usefulInfoLabel')}</span>
-            <span className="df-useful-info-tip">{t('designFiles.usefulInfoTip')}</span>
-          </div>
-          <div
-            className={`df-drop ${draggingFiles ? 'dragging' : ''}`}
-            onDragEnter={(ev) => {
-              ev.preventDefault();
-              dragDepthRef.current += 1;
-              setDraggingFiles(true);
-            }}
-            onDragOver={(ev) => {
-              ev.preventDefault();
-              ev.dataTransfer.dropEffect = 'copy';
-            }}
-            onDragLeave={(ev) => {
-              if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) {
-                dragDepthRef.current = 0;
-                setDraggingFiles(false);
-                return;
-              }
-              dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-              if (dragDepthRef.current === 0) setDraggingFiles(false);
-            }}
-            onDrop={handleDrop}
-          >
-            <span className="label">{t('designFiles.dropTitle')}</span>
-            <span className="desc">{t('designFiles.dropDesc')}</span>
+          <div className="df-footer-info">
+            {running ? (
+              <RotatingTip />
+            ) : (
+              <div className="df-drop-hint">
+                <span className="df-drop-hint-label">
+                  <Icon name="upload" size={12} />
+                  {t('designFiles.dropLabel')}
+                </span>
+                <span className="df-drop-hint-desc">{t('designFiles.dropDesc')}</span>
+              </div>
+            )}
           </div>
         </div>
+        {draggingFiles ? (
+          <div className="df-drop-overlay" aria-hidden>
+            <div className="df-drop-overlay-card">
+              <Icon name="upload" size={22} />
+              <span className="label">{t('designFiles.dropTitle')}</span>
+              <span className="desc">{t('designFiles.dropDesc')}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
       {preview && previewFile ? (
         // Key on the file name so React unmounts the previous DfPreview
@@ -1052,6 +1345,20 @@ export function DesignFilesPanel({
             }}
           >
             {t('common.rename')}
+          </button>
+          <button
+            type="button"
+            disabled={!files.some((file) => file.name === menuPos.name && file.localPath)}
+            onClick={(e) => {
+              e.stopPropagation();
+              const name = menuPos.name;
+              setMenuPos(null);
+              void copyLocalPath(name);
+            }}
+          >
+            {copiedLocalPath === menuPos.name
+              ? t('designFiles.copiedLocalPath')
+              : t('designFiles.copyLocalPath')}
           </button>
           <a
             href={projectFileUrl(projectId, menuPos.name)}
@@ -1258,6 +1565,46 @@ function categoryLabel(category: FileCategory, t: TranslateFn): string {
 function categoryGlyph(category: FileCategory): string {
   if (category === 'stylesheet') return '#';
   return kindGlyph(category);
+}
+
+function filesFromClipboardData(clipboardData: DataTransfer | null): File[] {
+  const files = Array.from(clipboardData?.files ?? []);
+  if (files.length > 0) return files.map(normalizePastedFile);
+  const items = Array.from(clipboardData?.items ?? []);
+  return items
+    .filter((item) => item.kind === 'file')
+    .flatMap((item) => {
+      const file = item.getAsFile();
+      return file ? [normalizePastedFile(file)] : [];
+    });
+}
+
+function normalizePastedFile(file: File): File {
+  if (file.name.trim()) return file;
+  const extension = extensionForMimeType(file.type);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return new File([file], `pasted-${stamp}${extension}`, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
+}
+
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/jpeg') return '.jpg';
+  if (mimeType === 'image/gif') return '.gif';
+  if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'image/svg+xml') return '.svg';
+  if (mimeType === 'text/html') return '.html';
+  if (mimeType === 'text/plain') return '.txt';
+  return '';
+}
+
+function shouldIgnoreClipboardFilePaste(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.closest('[contenteditable="true"]')) return true;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select';
 }
 
 async function filesFromDataTransfer(dataTransfer: DataTransfer): Promise<File[]> {

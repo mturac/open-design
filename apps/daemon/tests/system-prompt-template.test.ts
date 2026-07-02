@@ -48,6 +48,24 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
     expect(out).toMatch(/do NOT emit `<question-form id="discovery">`/);
   });
 
+  it('pins Plan mode above default artifact discovery and suppresses artifact brief forms', () => {
+    const out = composeSystemPrompt({
+      sessionMode: 'plan',
+      metadata: { kind: 'prototype' },
+    });
+
+    const overrideIdx = out.indexOf('# Plan mode — editable document first');
+    const discoveryIdx = out.indexOf('# OD core directives');
+    expect(overrideIdx).toBeGreaterThanOrEqual(0);
+    expect(discoveryIdx).toBeGreaterThanOrEqual(0);
+    expect(overrideIdx).toBeLessThan(discoveryIdx);
+    expect(out).toContain('do NOT emit `<question-form id="discovery">`');
+    expect(out).toContain('`<question-form id="task-type">`');
+    expect(out).toContain('Quick brief — 30 seconds');
+    expect(out).toContain('<question-form id="plan-brief">');
+    expect(out).toContain('plan-document-specific questions');
+  });
+
   it('does not instruct agents to ask for a second visual-direction picker', () => {
     const out = composeSystemPrompt({
       metadata: { kind: 'prototype' },
@@ -79,6 +97,18 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
     expect(out).toContain('tags: editorial, portrait');
     expect(out).toContain('Source: awesome/prompts by Jane Doe');
     expect(out).toContain('license MIT');
+  });
+
+  it('asks for image model and aspect ratio when they are unset (not silently defaulted)', () => {
+    const out = composeSystemPrompt({
+      metadata: { kind: 'image' },
+    });
+
+    // The composer no longer seeds imageModel/imageAspect — the agent must ask.
+    expect(out).toContain('**imageModel**: (unknown — ask: which image model/provider to use)');
+    expect(out).toContain('**aspectRatio**: (unknown — ask: 1:1, 16:9 for landscape, 9:16 for portrait)');
+    expect(out).not.toContain('gpt-image-2 (default');
+    expect(out).not.toContain('1:1 (default');
   });
 
   it('inlines the prompt body for video projects too', () => {
@@ -249,6 +279,10 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
       /actual\s+output path returned by the built-in imagegen result/,
     );
     expect(out).toContain('${CODEX_HOME:-$HOME/.codex}/generated_images/.../ig_*.png');
+    expect(out).toContain('When the user asked for one image, produce exactly one final project image');
+    expect(out).toContain('If Codex built-in imagegen returns multiple candidate files, previews, or');
+    expect(out).toContain('select the single best match and import only that file into');
+    expect(out).toContain('Do not copy every generated variant');
     expect(out).toContain('verify the exact destination file exists under');
     expect(out).toMatch(
       /report the exact source path, destination path, and access\/copy\s+error/,
@@ -468,6 +502,7 @@ describe('composeSystemPrompt — metadata.promptTemplate', () => {
     expect(out).toContain('ElevenLabs voice options');
     expect(out).toContain('<question-form id="elevenlabs-voice" title="Choose an ElevenLabs voice">');
     expect(out).toContain('"type": "select"');
+    expect(out).toContain('"allowCustom": false');
     expect(out).toContain('"label": "Rachel — american · female"');
     expect(out).toContain('"value": "21m00Tcm4TlvDq8ikWAM"');
     expect(out).toContain('"label": "Adam — american · male"');
