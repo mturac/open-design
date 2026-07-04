@@ -212,6 +212,7 @@ describe('TasksView page shell', () => {
 
     const modal = await screen.findByTestId('automation-modal');
     expect(modal.getAttribute('aria-label')).toBe('新建自动化');
+    expect(screen.getByLabelText('名称')).toBe(screen.getByTestId('automation-modal-title'));
     expect((screen.getByTestId('automation-modal-title') as HTMLInputElement).placeholder).toBe(
       '晨间简报',
     );
@@ -220,6 +221,28 @@ describe('TasksView page shell', () => {
     expect((screen.getByTestId('automation-modal-prompt') as HTMLTextAreaElement).placeholder).toBe(
       '告诉代理按此计划运行什么，或用 @ 提及上下文...',
     );
+
+    fireEvent.click(screen.getByLabelText(/每天/));
+    expect(screen.getByRole('tab', { name: '每天' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('时间')).toBeTruthy();
+    expect(screen.getByText('时区')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '已完成' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: '每小时' }));
+    expect(screen.getByText('每小时的第几分钟')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: '每周' }));
+    expect(screen.getByLabelText('工作日')).toBeTruthy();
+    expect(screen.getByText('时间')).toBeTruthy();
+    expect(screen.getByText('时区')).toBeTruthy();
+    expect(screen.queryByText('Minute of every hour')).toBeNull();
+    expect(screen.queryByText('Weekdays')).toBeNull();
+    expect(screen.queryByText('Time')).toBeNull();
+    expect(screen.queryByText('Timezone')).toBeNull();
+    expect(screen.queryByText('Done')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: '每天' }));
+    fireEvent.click(screen.getByRole('button', { name: '已完成' }));
 
     fireEvent.change(screen.getByTestId('automation-modal-prompt'), {
       target: { value: '@', selectionStart: 1 },
