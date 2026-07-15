@@ -772,7 +772,7 @@ describe('FileViewer SVG artifacts', () => {
       },
     });
     const previewText = '<!doctype html><html><head><script src="./app.js"></script></head>';
-    const fullHtml = `${previewText}<body><main>Imported filesystem app</main></body></html>`;
+    let fullHtml = `${previewText}<body><main>Imported filesystem app</main></body></html>`;
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.startsWith('/api/projects/project-1/text-preview/index.html')) {
@@ -800,7 +800,7 @@ describe('FileViewer SVG artifacts', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={file} />);
+    const { rerender } = render(<FileViewer projectId="project-1" projectKind="prototype" file={file} />);
 
     await waitFor(() => {
       const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
@@ -809,6 +809,21 @@ describe('FileViewer SVG artifacts', () => {
     });
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/projects/project-1/text-preview/index.html'), { cache: 'no-store' });
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/projects/project-1/raw/index.html?cacheBust='), {});
+
+    fullHtml = `${previewText}<body><main>Updated filesystem app</main></body></html>`;
+    rerender(
+      <FileViewer
+        projectId="project-1"
+        projectKind="prototype"
+        file={{ ...file, mtime: file.mtime + 1 }}
+      />,
+    );
+
+    await waitFor(() => {
+      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
+      expect(frame.getAttribute('data-od-render-mode')).toBe('srcdoc');
+      expect(frame.getAttribute('srcDoc')).toContain('Updated filesystem app');
+    });
   });
 
   it('evicts least-recent inactive preview iframes once the pool exceeds its limit', () => {

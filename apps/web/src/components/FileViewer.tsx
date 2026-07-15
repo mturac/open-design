@@ -6819,7 +6819,11 @@ function HtmlViewer({
       // switches but before the effect has run.
     }
     let cancelled = false;
-    if (shouldDeferPassivePreviewSource && sourceRef.current !== null) {
+    if (
+      shouldDeferPassivePreviewSource &&
+      sourceRef.current !== null &&
+      !previewTextNeedsFullSourceForSafeInline(sourceRef.current)
+    ) {
       setRoutingSource(sourceRef.current);
       sourceEverLoadedRef.current = true;
       return () => {
