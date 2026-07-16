@@ -7180,10 +7180,13 @@ function HtmlViewer({
     const cacheBust = `${Math.round(file.mtime)}-${reloadKey}-${filesRefreshKey}`;
     void (async () => {
       for (const assetPath of assetPaths) {
+        if (cancelled) return;
         try {
           const resp = await fetch(`${projectRawUrl(projectId, assetPath)}?previewAssetCheck=${encodeURIComponent(cacheBust)}`);
+          if (cancelled) return;
           if (resp.ok || resp.status === 404) continue;
           const body = await readPreviewAssetResponseBody(resp);
+          if (cancelled) return;
           if (isBlockedPreviewAssetResponse(body)) {
             if (!cancelled) setPreviewAssetWarning({ filePath: assetPath });
             return;
@@ -12218,9 +12221,9 @@ function HtmlViewer({
                   </PreviewDrawOverlay>
                   {previewAssetWarning ? (
                     <div className="preview-asset-warning" role="alert" data-testid="preview-asset-warning">
-                      <strong>Preview asset blocked</strong>
+                      <strong>{t('fileViewer.previewAssetBlockedTitle')}</strong>
                       <span>
-                        {previewAssetWarning.filePath} could not be loaded. Replace external symlinks with files inside this project.
+                        {t('fileViewer.previewAssetBlockedDetail', { filePath: previewAssetWarning.filePath })}
                       </span>
                     </div>
                   ) : null}
