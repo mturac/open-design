@@ -736,7 +736,32 @@ const PLUGIN_PREVIEWS_DIR = resolveDaemonPluginPreviewsDir({
   projectRoot: PROJECT_ROOT,
 });
 const OD_BIN = resolveDaemonCliPath();
-const OD_NODE_BIN = process.execPath;
+export function resolveOpenDesignNodeBin({
+  env = process.env,
+  execPath = process.execPath,
+  platform = process.platform,
+  resourceRoot = DAEMON_RESOURCE_ROOT,
+  exists = fs.existsSync,
+}: {
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  execPath?: string;
+  platform?: NodeJS.Platform;
+  resourceRoot?: string | null;
+  exists?: (path: string) => boolean;
+} = {}): string {
+  const configured = env.OD_NODE_BIN?.trim();
+  if (configured) return configured;
+
+  const bundledName = platform === 'win32' ? 'node.exe' : 'node';
+  const bundled = resourceRoot
+    ? (platform === 'win32' ? path.win32 : path).join(resourceRoot, 'bin', bundledName)
+    : null;
+  if (bundled && exists(bundled)) return bundled;
+
+  return execPath;
+}
+
+const OD_NODE_BIN = resolveOpenDesignNodeBin();
 const SKILLS_DIR = resolveDaemonResourceDir(
   DAEMON_RESOURCE_ROOT,
   'skills',
@@ -1088,7 +1113,7 @@ export function createAgentRuntimeEnv(
   baseEnv: NodeJS.ProcessEnv | Record<string, string | undefined>,
   daemonUrl: string,
   toolTokenGrant: { token?: string } | null = null,
-  nodeBin: string = process.execPath,
+  nodeBin: string = OD_NODE_BIN,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = applySandboxRuntimeEnv(
     {
