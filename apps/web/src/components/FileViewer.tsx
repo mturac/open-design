@@ -149,6 +149,7 @@ import {
   type UrlLoadDecision,
 } from './file-viewer-render-mode';
 import {
+  collectPreviewAssetPaths,
   htmlHasRootRelativeProjectAssetRefs,
   normalizeRootRelativeProjectAssetRefs,
   rewriteInlinedCssAssetRefs,
@@ -293,7 +294,9 @@ const POWERED_PREVIEW_ALLOW =
   'accelerometer; autoplay; camera; cross-origin-isolated; fullscreen; gamepad; gyroscope; microphone; xr-spatial-tracking';
 const HTML_PASSIVE_PREVIEW_FULL_TEXT_LIMIT = 2 * 1024 * 1024;
 const HTML_ROUTING_TEXT_PREVIEW_LIMIT = 96 * 1024;
+const HTML_PREVIEW_ASSET_PREFLIGHT_LIMIT = 32;
 type HtmlSourceLoadMode = 'full' | 'routing-preview';
+type PreviewAssetWarning = { filePath: string };
 
 function previewTextNeedsFullSourceForSafeInline(source: string | null): boolean {
   if (!source) return false;
@@ -303,6 +306,38 @@ function previewTextNeedsFullSourceForSafeInline(source: string | null): boolean
     htmlNeedsRedirectGuard(source) ||
     hasTweaksTemplate(source)
   );
+}
+
+function isBlockedPreviewAssetResponse(body: unknown): boolean {
+  if (typeof body === 'string') {
+    return /path escapes project dir/i.test(body);
+  }
+  if (!body || typeof body !== 'object') return false;
+  const payload = body as { error?: unknown; message?: unknown };
+  const error = payload.error;
+  if (typeof error === 'string') return isBlockedPreviewAssetResponse(error);
+  if (error && typeof error === 'object') {
+    const detail = error as { code?: unknown; message?: unknown };
+    if (detail.code === 'BAD_REQUEST' && isBlockedPreviewAssetResponse(detail.message)) return true;
+    return isBlockedPreviewAssetResponse(detail.message);
+  }
+  return isBlockedPreviewAssetResponse(payload.message);
+}
+
+async function readPreviewAssetResponseBody(resp: Response): Promise<unknown> {
+  const contentType = resp.headers.get('Content-Type') ?? '';
+  if (/json/i.test(contentType)) {
+    try {
+      return await resp.json();
+    } catch {
+      return '';
+    }
+  }
+  try {
+    return await resp.text();
+  } catch {
+    return '';
+  }
 }
 
 const PREVIEW_VIEWPORT_PRESETS: PreviewViewportPreset[] = [
@@ -6148,6 +6183,7 @@ function HtmlViewer({
   const [source, setSource] = useState<string | null>(liveHtml ?? null);
   const [routingSource, setRoutingSource] = useState<string | null>(liveHtml ?? null);
   const [serverPoweredPreviewRequired, setServerPoweredPreviewRequired] = useState(false);
+  const [previewAssetWarning, setPreviewAssetWarning] = useState<PreviewAssetWarning | null>(null);
   const [inlinedSource, setInlinedSource] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const fileViewportKey = previewViewportStateKey(projectId, file);
@@ -7130,6 +7166,50 @@ function HtmlViewer({
     () => source != null && htmlHasRootRelativeProjectAssetRefs(source, projectFilePathSet),
     [source, projectFilePathSet],
   );
+  useEffect(() => {
+    setPreviewAssetWarning(null);
+    if (mode !== 'preview' || effectiveDeck) return;
+    const s = routingHtmlSource;
+    if (!s) return;
+    const assetPaths = collectPreviewAssetPaths(s, file.name, projectFilePathSet)
+      .filter((assetPath) => assetPath !== file.name)
+      .slice(0, HTML_PREVIEW_ASSET_PREFLIGHT_LIMIT);
+    if (assetPaths.length === 0) return;
+
+    let cancelled = false;
+    const cacheBust = `${Math.round(file.mtime)}-${reloadKey}-${filesRefreshKey}`;
+    void (async () => {
+      for (const assetPath of assetPaths) {
+        try {
+          const resp = await fetch(`${projectRawUrl(projectId, assetPath)}?previewAssetCheck=${encodeURIComponent(cacheBust)}`);
+          if (resp.ok || resp.status === 404) continue;
+          const body = await readPreviewAssetResponseBody(resp);
+          if (isBlockedPreviewAssetResponse(body)) {
+            if (!cancelled) setPreviewAssetWarning({ filePath: assetPath });
+            return;
+          }
+        } catch {
+          // Network/daemon reachability errors are already represented by the
+          // normal preview loading path. This preflight is only for clear raw
+          // route security blocks hidden inside iframe subresource loads.
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    effectiveDeck,
+    file.mtime,
+    file.name,
+    filesRefreshKey,
+    mode,
+    projectFilePathSet,
+    projectId,
+    reloadKey,
+    routingHtmlSource,
+  ]);
   // A real WebGL/Worker/WASM/SharedArrayBuffer artifact needs the "powered
   // preview" path — a cross-origin-isolated iframe with allow-same-origin —
   // which the opaque preview sandbox cannot provide (issue #724). Powered mode
@@ -12136,6 +12216,14 @@ function HtmlViewer({
                       />
                     </div>
                   </PreviewDrawOverlay>
+                  {previewAssetWarning ? (
+                    <div className="preview-asset-warning" role="alert" data-testid="preview-asset-warning">
+                      <strong>Preview asset blocked</strong>
+                      <span>
+                        {previewAssetWarning.filePath} could not be loaded. Replace external symlinks with files inside this project.
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {boardMode ? (
