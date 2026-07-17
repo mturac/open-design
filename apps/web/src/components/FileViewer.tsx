@@ -10394,9 +10394,11 @@ function HtmlViewer({
     // in the browser screenshot flow (DesignBrowserPanel).
     await waitForAnimationFrame();
     await waitForAnimationFrame();
-    // Prefer the daemon's off-screen render (desktop only): viewport-independent
-    // and, rendering the artifact alone in a hidden window, it can never capture
-    // Open Design's own UI. `wholeDeck` (Export as image) stitches every slide
+    // Prefer the daemon's off-screen render (desktop only): isolated from the
+    // preview pane and, rendering the artifact alone in a hidden window, it can
+    // never capture Open Design's own UI. Page exports use the selected preview
+    // preset; desktop pages and decks retain the renderer defaults. `wholeDeck`
+    // (Export as image) stitches every slide
     // top-to-bottom into one long image — matching the slide count the viewer
     // reports; otherwise (Copy screenshot, Mark/Draw capture) it grabs the
     // CURRENT slide, mirroring what's on screen. An ordinary page is its
@@ -10417,11 +10419,16 @@ function HtmlViewer({
       const trackedActive = slideState?.active ?? htmlPreviewSlideState.get(previewStateKey)?.active ?? null;
       const plan = planDeckImageCapture({ deck: imageDeckSignal, wholeDeck, trackedActive });
       if (plan.useOffscreen) {
+        const exportViewport = !imageDeckSignal && previewViewport !== 'desktop'
+          ? PREVIEW_VIEWPORT_PRESETS.find((preset) => preset.id === previewViewport)
+          : null;
         const rendered = await exportProjectImageDataUrl({
           projectId,
           fileName: file.name,
           deck: imageDeckSignal,
           ...(plan.index != null ? { index: plan.index } : {}),
+          ...(exportViewport?.width != null ? { width: exportViewport.width } : {}),
+          ...(exportViewport?.height != null ? { height: exportViewport.height } : {}),
           ...(exportContext?.versionId ? { versionId: exportContext.versionId } : {}),
         });
         if (rendered.ok) return rendered.snapshot;
@@ -10486,6 +10493,7 @@ function HtmlViewer({
     deckExportSignalForContext,
     slideState?.active,
     previewStateKey,
+    previewViewport,
     projectId,
     file.name,
   ]);
