@@ -36,6 +36,13 @@ import { isOrchestratorScratchWorkspace } from './workspace-contract.js';
 
 const FORBIDDEN_SEGMENT = /^$|^\.\.?$/;
 const RESERVED_PROJECT_FILE_SEGMENTS = new Set(['.file-versions', '.live-artifacts']);
+
+// Listing skips both the generated/installed trees from the shared ignore
+// list and the daemon's reserved state directories — the latter must never
+// surface even now that other dot-prefixed user content is listed (#6175).
+function isListingSkippedDirName(name: string): boolean {
+  return isIgnoredProjectDirName(name) || RESERVED_PROJECT_FILE_SEGMENTS.has(name);
+}
 const DESIGN_HANDOFF_FILENAME = 'DESIGN-HANDOFF.md';
 const DESIGN_MANIFEST_FILENAME = 'DESIGN-MANIFEST.json';
 export const RUN_ARTIFACT_RECONCILE_MTIME_GRACE_MS = 1000;
@@ -141,7 +148,13 @@ export async function listFiles(projectsRoot, projectId, opts = {}) {
   // Skip generated dependency/build trees for all project roots. Standard OD
   // projects can contain framework installs too; surfacing package HTML like
   // node_modules/tslib/*.html as artifacts produces blank previews.
-  await collectFiles(dir, '', out, isIgnoredProjectDirName, dir);
+  // Dot-prefixed user content (.github/, .vscode/, .notes.md) is listed for
+  // managed projects (#6175); imported folders keep hiding dot entries to
+  // stay consistent with assertVisibleForImportedProject, which refuses to
+  // serve hidden path segments from a user's own directory. Reserved daemon
+  // directories (.live-artifacts, .file-versions) stay hidden everywhere.
+  const skipHidden = hasExternalProjectRoot(metadata);
+  await collectFiles(dir, '', out, isListingSkippedDirName, dir, skipHidden);
   // Newest first — matches the visual order users expect after generating.
   out.sort((a, b) => b.mtime - a.mtime);
   const since = Number(opts.since);
@@ -155,12 +168,20 @@ export async function listProjectFolders(projectsRoot, projectId, opts = {}) {
   const metadata = opts?.metadata;
   const dir = resolveProjectDir(projectsRoot, projectId, metadata);
   const out = [];
-  await collectFolders(dir, '', out, isIgnoredProjectDirName);
+  // Same hidden-entry policy as listFiles (#6175).
+  const skipHidden = hasExternalProjectRoot(metadata);
+  await collectFolders(dir, '', out, isListingSkippedDirName, skipHidden);
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
 
-async function collectFolders(dir, relDir, out, shouldSkipDir?: (name: string) => boolean) {
+async function collectFolders(
+  dir,
+  relDir,
+  out,
+  shouldSkipDir?: (name: string) => boolean,
+  skipHidden = false,
+) {
   let entries = [];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -170,7 +191,7 @@ async function collectFolders(dir, relDir, out, shouldSkipDir?: (name: string) =
   }
   for (const e of entries) {
     if (!e.isDirectory()) continue;
-    if (e.name.startsWith('.')) continue;
+    if (skipHidden && e.name.startsWith('.')) continue;
     if (shouldSkipDir?.(e.name)) continue;
     const rel = relDir ? `${relDir}/${e.name}` : e.name;
     const full = path.join(dir, e.name);
@@ -182,7 +203,7 @@ async function collectFolders(dir, relDir, out, shouldSkipDir?: (name: string) =
       size: 0,
       mtime: st.mtimeMs,
     });
-    await collectFolders(full, rel, out, shouldSkipDir);
+    await collectFolders(full, rel, out, shouldSkipDir, skipHidden);
   }
 }
 
@@ -262,7 +283,14 @@ export async function detectEntryFile(dir: string): Promise<string | null> {
   return null;
 }
 
-async function collectFiles(dir, relDir, out, shouldSkipDir?: (name: string) => boolean, projectRoot = dir) {
+async function collectFiles(
+  dir,
+  relDir,
+  out,
+  shouldSkipDir?: (name: string) => boolean,
+  projectRoot = dir,
+  skipHidden = false,
+) {
   let entries = [];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -271,12 +299,12 @@ async function collectFiles(dir, relDir, out, shouldSkipDir?: (name: string) => 
     throw err;
   }
   for (const e of entries) {
-    if (e.name.startsWith('.')) continue;
+    if (skipHidden && e.name.startsWith('.')) continue;
     const rel = relDir ? `${relDir}/${e.name}` : e.name;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       if (shouldSkipDir?.(e.name)) continue;
-      await collectFiles(full, rel, out, shouldSkipDir, projectRoot);
+      await collectFiles(full, rel, out, shouldSkipDir, projectRoot, skipHidden);
       continue;
     }
     if (!e.isFile()) continue;
