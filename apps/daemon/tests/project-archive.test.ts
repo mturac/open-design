@@ -36,7 +36,14 @@ describe('buildProjectArchive', () => {
       .filter((entry) => !entry.dir)
       .map((entry) => entry.name)
       .sort();
-    expect(fileEntries).toEqual(['DESIGN-HANDOFF.md', 'DESIGN-MANIFEST.json', 'frames/phone.html', 'index.html', 'src/app.css']);
+    expect(fileEntries).toEqual([
+      '.hidden',
+      'DESIGN-HANDOFF.md',
+      'DESIGN-MANIFEST.json',
+      'frames/phone.html',
+      'index.html',
+      'src/app.css',
+    ]);
   });
 
   it('zips the whole project when no root is given', async () => {
@@ -49,10 +56,11 @@ describe('buildProjectArchive', () => {
     expect(fileEntries).toContain('DESIGN-HANDOFF.md');
     expect(fileEntries).toContain('DESIGN-MANIFEST.json');
     expect(fileEntries).toContain('README.md');
+    expect(fileEntries).toContain('ui-design/.hidden');
     expect(fileEntries).toContain('ui-design/index.html');
     expect(fileEntries).toContain('ui-design/src/app.css');
-    // dotfiles and .artifact.json sidecars are filtered, matching listFiles
-    expect(fileEntries.find((n) => n.includes('.hidden'))).toBeUndefined();
+    // Invariant: managed-project archives match listFiles and keep user
+    // dotfiles, while generated .artifact.json sidecars remain excluded.
     expect(fileEntries.find((n) => n.endsWith('.artifact.json'))).toBeUndefined();
   });
 

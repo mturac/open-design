@@ -2,9 +2,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { buildBatchArchive, listFiles, listProjectFolders } from '../src/projects.js';
+import {
+  buildBatchArchive,
+  buildProjectArchive,
+  listFiles,
+  listProjectFolders,
+} from '../src/projects.js';
 
 // Regression tests for #6175: the file/folder listing helpers used a blanket
 // `startsWith('.')` filter, so legitimate dot-prefixed user content
@@ -81,6 +87,35 @@ describe('dot-prefixed user content in managed projects (#6175)', () => {
     expect(names).not.toContain('.file-versions');
   });
 
+  it('includes visible dot-prefixed user content in full project archives', async () => {
+    const { buffer } = await buildProjectArchive(projectsRoot, projectId, '');
+    const zip = await JSZip.loadAsync(buffer);
+    const paths = Object.keys(zip.files);
+
+    expect(paths).toContain('.github/workflows/ci.yml');
+    expect(paths).toContain('.storybook/main.ts');
+    expect(paths).toContain('.notes.md');
+    expect(paths.some((p) => p.startsWith('.git/'))).toBe(false);
+    expect(paths.some((p) => p.startsWith('.od/'))).toBe(false);
+    expect(paths.some((p) => p.startsWith('node_modules/'))).toBe(false);
+    expect(paths.some((p) => p.startsWith('.live-artifacts/'))).toBe(false);
+    expect(paths.some((p) => p.startsWith('.file-versions/'))).toBe(false);
+  });
+
+  it('includes visible dot-prefixed user content in batch archives', async () => {
+    await writeFile(path.join(projectsRoot, projectId, 'build'), 'plain user file');
+    const { buffer } = await buildBatchArchive(projectsRoot, projectId, [
+      '.github/workflows/ci.yml',
+      '.notes.md',
+      'build',
+    ]);
+    const zip = await JSZip.loadAsync(buffer);
+
+    expect(Object.keys(zip.files)).toEqual(
+      expect.arrayContaining(['.github/workflows/ci.yml', '.notes.md', 'build']),
+    );
+  });
+
   it('batch archive keeps rejecting reserved daemon state', async () => {
     await expect(
       buildBatchArchive(projectsRoot, projectId, ['.live-artifacts/artifact-1/index.html']),
@@ -120,6 +155,15 @@ describe('dot-prefixed entries in imported folders stay hidden (#6175)', () => {
     const names = folders.map((f) => f.path);
     expect(names).toContain('src');
     expect(names.some((p) => p.startsWith('.'))).toBe(false);
+  });
+
+  it('keeps rejecting hidden archive roots for external baseDir projects', async () => {
+    await expect(
+      buildProjectArchive('/unused/projects', 'unused-id', '.github', {
+        kind: 'prototype',
+        baseDir,
+      }),
+    ).rejects.toThrow(/hidden path segments/);
   });
 
   it('keeps rejecting hidden segments in batch archives for external baseDir projects', async () => {

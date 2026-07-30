@@ -327,16 +327,19 @@ async function collectFiles(
 }
 
 // Build a ZIP of every file under the project directory (or under `root`,
-// if it points at a subdirectory). Mirrors listFiles' filtering — dotfiles
-// and `.artifact.json` sidecars are excluded — so the archive matches what
-// the user sees in the file panel. Used by the "Download as .zip" share
-// menu item, which exports the user's actual project tree (e.g. the
-// uploaded `ui-design/` folder), not just the rendered HTML.
+// if it points at a subdirectory). Mirrors listFiles' filtering: managed
+// projects keep user-owned dotfiles, imported folders keep hiding all hidden
+// segments, and ignored/reserved trees plus `.artifact.json` sidecars stay
+// excluded everywhere. Used by the "Download as .zip" share menu item, which
+// exports the user's actual project tree (e.g. the uploaded `ui-design/`
+// folder), not just the rendered HTML.
 export async function buildProjectArchive(projectsRoot, projectId, root, metadata?) {
   const projectRoot = resolveProjectDir(projectsRoot, projectId, metadata);
+  const skipHidden = hasExternalProjectRoot(metadata);
   let archiveRoot = projectRoot;
   let archiveBaseName = '';
   if (typeof root === 'string' && root.trim().length > 0) {
+    assertVisibleForImportedProject(root, metadata);
     // Use the symlink-aware resolver so that an imported folder containing
     // e.g. `docs -> /Users/me/.ssh` cannot exfiltrate via
     // GET /api/projects/:id/archive?root=docs. resolveSafe()'s string
@@ -369,7 +372,7 @@ export async function buildProjectArchive(projectsRoot, projectId, root, metadat
   }
 
   const entries = [];
-  await collectArchiveEntries(archiveRoot, '', entries);
+  await collectArchiveEntries(archiveRoot, '', entries, skipHidden);
   if (entries.length === 0) {
     const err = new Error('archive root is empty');
     err.code = 'ENOENT';
@@ -414,18 +417,21 @@ export async function buildBatchArchive(projectsRoot, projectId, fileNames, meta
     }
 
     // Mirror the visible-file allowlist from collectFiles/collectArchiveEntries:
-    // reject any hidden segment, .artifact.json sidecars, and symlinks at any
-    // level of the path (not just the final basename).
+    // imported folders reject every hidden segment; managed projects allow
+    // user dotfiles but still reject ignored/reserved trees. Sidecars and
+    // symlinks remain ineligible everywhere.
     const relSegments = path.relative(projectRoot, filePath).split(path.sep);
-    let hidden = false;
-    for (const seg of relSegments) {
-      if (seg.startsWith('.')) {
-        hidden = true;
-        break;
-      }
-    }
-    if (hidden) {
+    const importedHidden =
+      hasExternalProjectRoot(metadata) && relSegments.some((seg) => seg.startsWith('.'));
+    if (importedHidden) {
       rejected.push({ name, reason: 'hidden segments are not eligible for archive' });
+      continue;
+    }
+    // Only directory segments participate in the shared directory ignore
+    // policy. A regular user file may legitimately be named `build` or
+    // `vendor`; validateProjectPath() already rejects reserved state segments.
+    if (relSegments.slice(0, -1).some((seg) => isIgnoredProjectDirName(seg))) {
+      rejected.push({ name, reason: 'ignored directory segments are not eligible for archive' });
       continue;
     }
     if (path.basename(filePath).endsWith('.artifact.json')) {
@@ -515,7 +521,7 @@ export async function buildBatchArchive(projectsRoot, projectId, fileNames, meta
   return { buffer, baseName: '' };
 }
 
-async function collectArchiveEntries(dir, relDir, out) {
+async function collectArchiveEntries(dir, relDir, out, skipHidden = false) {
   let entries = [];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -524,13 +530,13 @@ async function collectArchiveEntries(dir, relDir, out) {
     throw err;
   }
   for (const e of entries) {
-    if (e.name.startsWith('.')) continue;
+    if (skipHidden && e.name.startsWith('.')) continue;
     if (!e.isDirectory() && !e.isFile()) continue;
     const rel = relDir ? `${relDir}/${e.name}` : e.name;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (isIgnoredProjectDirName(e.name)) continue;
-      await collectArchiveEntries(full, rel, out);
+      if (isListingSkippedDirName(e.name)) continue;
+      await collectArchiveEntries(full, rel, out, skipHidden);
       continue;
     }
     if (e.name.endsWith('.artifact.json')) continue;
