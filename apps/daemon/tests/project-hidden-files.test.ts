@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -151,6 +151,19 @@ describe('dot-prefixed user content in managed projects (#6175)', () => {
         buildProjectArchive(projectsRoot, projectId, reserved),
       ).rejects.toThrow(/reserved project path/);
     }
+  });
+
+  it('rejects ignored directories as explicit archive roots, including resolved symlink aliases', async () => {
+    for (const ignored of ['.git', '.od', 'node_modules']) {
+      await expect(
+        buildProjectArchive(projectsRoot, projectId, ignored),
+      ).rejects.toThrow(/ignored or reserved/);
+    }
+
+    await symlink('.git', path.join(projectsRoot, projectId, 'git-alias'), 'dir');
+    await expect(
+      buildProjectArchive(projectsRoot, projectId, 'git-alias'),
+    ).rejects.toThrow(/ignored or reserved/);
   });
 
   it('includes visible dot-prefixed user content in batch archives', async () => {

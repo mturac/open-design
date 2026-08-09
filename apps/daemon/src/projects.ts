@@ -368,6 +368,16 @@ export async function buildProjectArchive(projectsRoot, projectId, root, metadat
     // collectArchiveEntries() / readFile() would follow the symlink at
     // open() time and zip files outside the project tree.
     archiveRoot = await resolveSafeReal(projectRoot, root);
+    const projectRootReal = await realpath(projectRoot).catch(() => projectRoot);
+    const resolvedRootSegments = path
+      .relative(projectRootReal, archiveRoot)
+      .split(path.sep)
+      .filter(Boolean);
+    if (resolvedRootSegments.some((segment) => isListingSkippedDirName(segment))) {
+      const err = new Error('archive root is ignored or reserved');
+      err.code = 'BAD_REQUEST';
+      throw err;
+    }
     archiveBaseName = path.basename(archiveRoot);
   }
 

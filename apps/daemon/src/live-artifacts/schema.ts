@@ -1,3 +1,5 @@
+import { isReservedProjectFilePath } from '../projects.js';
+
 // Runtime validation lives in the daemon. These mirror the shared DTOs in
 // packages/contracts/src/api/live-artifacts.ts without importing daemon internals
 // into contracts or forcing the daemon to compile contract source files.
@@ -329,24 +331,21 @@ function validateRelativePath(value: string, path: string, issues: LiveArtifactV
   }
 }
 
-// Reserved project path segments rejected by validateProjectPath() in projects.ts.
-// Mirrored here (kept in sync with RESERVED_PROJECT_FILE_SEGMENTS) so schema-side
-// acceptance stays a subset of what a refresh can actually read.
-const RESERVED_READ_JSON_SEGMENTS = new Set(['.live-artifacts']);
-
 // project_files.read_json resolves a selector, feeds it to validateProjectPath()
 // (refresh.ts → projects.ts), and then requires a .json extension. validateRelativePath
 // alone misses single-dot segments, reserved segments, and the extension, so mirror the
 // remaining static rules here — otherwise sources like { path: './report.json' } or
 // { file: '.live-artifacts/cache.json' } pass creation yet fail every refresh, recreating
 // the persisted-but-unrefreshable artifact class this validation exists to prevent.
+// The reserved-path predicate is shared with runtime reads so exact, prefix, and
+// case-insensitive aliases cannot drift between registration and refresh.
 function validateReadJsonSelector(value: string, path: string, issues: LiveArtifactValidationIssue[]): void {
   validateRelativePath(value, path, issues); // absolute / .. / null-byte / length
   const segments = value.replace(/\\/g, '/').split('/').filter((part) => part.length > 0);
   if (segments.some((part) => part === '.')) {
     issues.push({ path, message: `${path} cannot contain '.' path segments` });
   }
-  if (segments.some((part) => RESERVED_READ_JSON_SEGMENTS.has(part))) {
+  if (isReservedProjectFilePath(value)) {
     issues.push({ path, message: `${path} cannot reference a reserved project path` });
   }
   // Case-sensitive to match executeProjectFilesReadJson's `endsWith('.json')` exactly;

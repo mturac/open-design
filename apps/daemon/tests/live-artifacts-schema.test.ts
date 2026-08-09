@@ -385,10 +385,17 @@ describe('live artifact schema validation', () => {
 
   it('rejects single-dot and reserved-path read_json selectors across every alias', () => {
     // validateProjectPath (refresh.ts → projects.ts) rejects '.' segments and the
-    // reserved '.live-artifacts' segment; the executor also requires a .json file.
+    // shared reserved-path policy; the executor also requires a .json file.
     // Schema acceptance must stay a subset of that, or the source persists yet
     // fails every refresh with "invalid file name" / "reserved project path".
-    const badValues = ['./report.json', '.live-artifacts/cache.json', 'nested/./report.json', 'reports/notes.txt'];
+    const badValues = [
+      './report.json',
+      '.live-artifacts/cache.json',
+      '.MCP.JSON/config.json',
+      '.OD-RENAME-123.json',
+      'nested/./report.json',
+      'reports/notes.txt',
+    ];
     for (const alias of ['path', 'file', 'name'] as const) {
       for (const value of badValues) {
         const result = validateLiveArtifactCreateInput({
