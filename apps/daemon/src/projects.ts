@@ -373,6 +373,7 @@ export async function buildProjectArchive(projectsRoot, projectId, root, metadat
       .relative(projectRootReal, archiveRoot)
       .split(path.sep)
       .filter(Boolean);
+    assertVisibleForImportedProject(resolvedRootSegments.join('/'), metadata);
     if (resolvedRootSegments.some((segment) => isListingSkippedDirName(segment))) {
       const err = new Error('archive root is ignored or reserved');
       err.code = 'BAD_REQUEST';

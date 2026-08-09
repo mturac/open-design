@@ -259,6 +259,19 @@ describe('dot-prefixed entries in imported folders stay hidden (#6175)', () => {
     ).rejects.toThrow(/hidden path segments/);
   });
 
+  it('rejects visible archive-root aliases that resolve to hidden imported directories', async () => {
+    await mkdir(path.join(baseDir, '.private'));
+    await writeFile(path.join(baseDir, '.private', 'secret.txt'), 'private');
+    await symlink('.private', path.join(baseDir, 'public-alias'), 'dir');
+
+    await expect(
+      buildProjectArchive('/unused/projects', 'unused-id', 'public-alias', {
+        kind: 'prototype',
+        baseDir,
+      }),
+    ).rejects.toThrow(/hidden path segments/);
+  });
+
   it('keeps rejecting hidden segments in batch archives for external baseDir projects', async () => {
     await expect(
       buildBatchArchive('/unused/projects', 'unused-id', ['.github/workflows/ci.yml'], {
