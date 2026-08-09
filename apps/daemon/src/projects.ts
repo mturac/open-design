@@ -35,13 +35,33 @@ import {
 import { isOrchestratorScratchWorkspace } from './workspace-contract.js';
 
 const FORBIDDEN_SEGMENT = /^$|^\.\.?$/;
-const RESERVED_PROJECT_FILE_SEGMENTS = new Set(['.file-versions', '.live-artifacts']);
+const RESERVED_PROJECT_FILE_SEGMENTS = new Set([
+  '.amr-attachments',
+  '.file-versions',
+  '.finalize.lock',
+  '.live-artifacts',
+  '.mcp.json',
+  '.od-skills',
+  '.open-design',
+  '.pi',
+  '.transcript.jsonl',
+  '.transcript.lock',
+]);
+const RESERVED_PROJECT_FILE_PREFIXES = ['.od-rename-', '.transcript.jsonl.tmp.'];
+
+function isReservedProjectFileSegment(name: string): boolean {
+  const normalized = name.toLowerCase();
+  return (
+    RESERVED_PROJECT_FILE_SEGMENTS.has(normalized) ||
+    RESERVED_PROJECT_FILE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
+}
 
 // Listing skips both the generated/installed trees from the shared ignore
 // list and the daemon's reserved state directories — the latter must never
 // surface even now that other dot-prefixed user content is listed (#6175).
 function isListingSkippedDirName(name: string): boolean {
-  return isIgnoredProjectDirName(name) || RESERVED_PROJECT_FILE_SEGMENTS.has(name);
+  return isIgnoredProjectDirName(name) || isReservedProjectFileSegment(name);
 }
 const DESIGN_HANDOFF_FILENAME = 'DESIGN-HANDOFF.md';
 const DESIGN_MANIFEST_FILENAME = 'DESIGN-MANIFEST.json';
@@ -152,7 +172,7 @@ export async function listFiles(projectsRoot, projectId, opts = {}) {
   // managed projects (#6175); imported folders keep hiding dot entries to
   // stay consistent with assertVisibleForImportedProject, which refuses to
   // serve hidden path segments from a user's own directory. Reserved daemon
-  // directories (.live-artifacts, .file-versions) stay hidden everywhere.
+  // state files and directories stay hidden everywhere.
   const skipHidden = hasExternalProjectRoot(metadata);
   await collectFiles(dir, '', out, isListingSkippedDirName, dir, skipHidden);
   // Newest first — matches the visual order users expect after generating.
@@ -300,6 +320,7 @@ async function collectFiles(
   }
   for (const e of entries) {
     if (skipHidden && e.name.startsWith('.')) continue;
+    if (isReservedProjectFileSegment(e.name)) continue;
     const rel = relDir ? `${relDir}/${e.name}` : e.name;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
@@ -531,6 +552,7 @@ async function collectArchiveEntries(dir, relDir, out, skipHidden = false) {
   }
   for (const e of entries) {
     if (skipHidden && e.name.startsWith('.')) continue;
+    if (isReservedProjectFileSegment(e.name)) continue;
     if (!e.isDirectory() && !e.isFile()) continue;
     const rel = relDir ? `${relDir}/${e.name}` : e.name;
     const full = path.join(dir, e.name);
@@ -1487,7 +1509,7 @@ export function validateProjectPath(raw) {
   if (parts.length === 0 || parts.some((p) => FORBIDDEN_SEGMENT.test(p))) {
     throw new Error('invalid file name');
   }
-  if (parts.some((part) => RESERVED_PROJECT_FILE_SEGMENTS.has(part))) {
+  if (parts.some((part) => isReservedProjectFileSegment(part))) {
     throw new Error('reserved project path');
   }
   return parts.join('/');
@@ -1496,7 +1518,7 @@ export function validateProjectPath(raw) {
 export function isReservedProjectFilePath(raw) {
   try {
     const normalized = String(raw ?? '').replace(/\\/g, '/');
-    return normalized.split('/').filter(Boolean).some((part) => RESERVED_PROJECT_FILE_SEGMENTS.has(part));
+    return normalized.split('/').filter(Boolean).some((part) => isReservedProjectFileSegment(part));
   } catch {
     return false;
   }
