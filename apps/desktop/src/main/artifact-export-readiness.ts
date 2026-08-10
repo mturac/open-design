@@ -23,13 +23,22 @@ export function artifactRenderReadinessScript(timeoutMs: number): string {
     if (!runtimeJsx) return Promise.resolve(true);
 
     var ignoredTags = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE']);
-
-    function hasMountedChild(root) {
-      if (!root) return false;
-      return Array.from(root.childNodes).some(function(node) {
+    function meaningfulChildren(root) {
+      if (!root) return [];
+      return Array.from(root.childNodes).filter(function(node) {
         if (node.nodeType === 3) return Boolean(node.nodeValue && node.nodeValue.trim());
         return node.nodeType === 1 && !ignoredTags.has(node.tagName);
       });
+    }
+
+    function renderPlaceholder(root) {
+      var children = meaningfulChildren(root);
+      if (children.length !== 1 || children[0].nodeType !== 1) return null;
+      return children[0].classList.contains('ui-kit-loading') ? children[0] : null;
+    }
+
+    function hasMountedChild(root) {
+      return meaningfulChildren(root).length > 0;
     }
 
     function hasMountedContent() {
@@ -37,9 +46,23 @@ export function artifactRenderReadinessScript(timeoutMs: number): string {
       var roots = Array.from(document.body.querySelectorAll(
         '#root, #app, [data-reactroot], [data-v-app]'
       ));
-      if (roots.length > 0) return roots.some(hasMountedChild);
+      if (roots.length > 0) {
+        return roots.some(function(root) {
+          if (!hasMountedChild(root)) return false;
+          var initialPlaceholder = initialPlaceholders.get(root);
+          return initialPlaceholder === undefined || renderPlaceholder(root) !== initialPlaceholder;
+        });
+      }
       return hasMountedChild(document.body);
     }
+
+    var initialPlaceholders = new Map();
+    Array.from(document.body.querySelectorAll(
+      '#root, #app, [data-reactroot], [data-v-app]'
+    )).forEach(function(root) {
+      var placeholder = renderPlaceholder(root);
+      if (placeholder) initialPlaceholders.set(root, placeholder);
+    });
 
     return new Promise(function(resolve) {
       var settled = false;

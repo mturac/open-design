@@ -63,6 +63,58 @@ describe('artifact image render readiness', () => {
     await expect(ready).resolves.toBe(true);
   });
 
+  it('waits for an existing UI-kit placeholder to be replaced', async () => {
+    document.body.innerHTML = [
+      '<div id="root"><div class="ui-kit-loading">Loading Acme UI kit...</div></div>',
+      '<script type="text/babel"></script>',
+    ].join('');
+    let settled = false;
+    const ready = runReadinessScript(1_000).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await vi.advanceTimersByTimeAsync(300);
+    expect(settled).toBe(false);
+
+    document.querySelector('#root')!.innerHTML = '<main>Mounted UI kit</main>';
+    await vi.advanceTimersByTimeAsync(50);
+
+    await expect(ready).resolves.toBe(true);
+  });
+
+  it('accepts runtime JSX content that mounted before the readiness check', async () => {
+    document.body.innerHTML = '<div id="root"><main>Already mounted</main></div><script type="text/babel"></script>';
+    const ready = runReadinessScript(1_000);
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    await expect(ready).resolves.toBe(true);
+  });
+
+  it('accepts a mounted loading subview after replacing the UI-kit placeholder', async () => {
+    document.body.innerHTML = [
+      '<div id="root"><div class="ui-kit-loading">Loading Acme UI kit...</div></div>',
+      '<script type="text/babel"></script>',
+    ].join('');
+    let settled = false;
+    const ready = runReadinessScript(1_000).then((result) => {
+      settled = true;
+      return result;
+    });
+
+    await vi.advanceTimersByTimeAsync(300);
+    expect(settled).toBe(false);
+
+    document.querySelector('#root')!.innerHTML = [
+      '<main><h1>Mounted UI kit</h1>',
+      '<section aria-busy="true">Loading chart</section></main>',
+    ].join('');
+    await vi.advanceTimersByTimeAsync(50);
+
+    await expect(ready).resolves.toBe(true);
+  });
+
   it('fails loudly when a runtime render root stays empty', async () => {
     document.body.innerHTML = '<div id="root"></div><script type="text/babel"></script>';
     const ready = runReadinessScript(250);
