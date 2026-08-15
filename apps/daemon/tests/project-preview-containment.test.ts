@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ensureWorkspaceProject, openDatabase } from '../src/db.js';
 import { startServer } from '../src/server.js';
-import { rewriteCssUrlsOutsideScripts } from '../src/routes/project/index.js';
+import { rewriteOutsideScriptContents } from '../src/routes/project/index.js';
 
 describe('project preview containment routes', () => {
   let server: http.Server;
@@ -149,12 +149,17 @@ describe('project preview containment routes', () => {
     expect(await assetResponse.text()).toContain('color: black');
   });
 
-  it('preserves script contents while rewriting workspace-scoped CSS asset URLs', async () => {
+  it('preserves script contents while rewriting workspace-scoped asset URLs', async () => {
     const workspaceId = `workspace-${randomUUID()}`;
     const workspaceMemberId = `member-${randomUUID()}`;
     const projectId = await createProject({ entryFile: 'index.html' });
-    const script = "const cssText = 'background: url(\"assets/runtime.png\")'; "
-      + "const url = 'blob:preview'; URL.revokeObjectURL(url);";
+    const script = [
+      'const src = "assets/runtime.png";',
+      'const markup = \'<link href="styles/runtime.css">'
+        + '<img src="assets/runtime.png" srcset="assets/runtime.png 1x">\';',
+      "const cssText = 'background: url(\"assets/runtime.png\")';",
+      "const url = 'blob:preview'; URL.revokeObjectURL(url);",
+    ].join(' ');
     await writeProjectFile(
       projectId,
       'index.html',
@@ -163,13 +168,15 @@ describe('project preview containment routes', () => {
         '<html><head>',
         '<!-- code sample: <script> -->',
         '<textarea><script></textarea>',
+        '<script src="assets/external.js"></script>',
         `<script>${script}</script>`,
         '</head><body>',
-        '<style>.hero { background: url("assets/hero.png"); }</style>',
+        '<img src="assets/image.png" srcset="assets/image-1x.png 1x">',
+        '<link href="assets/theme.css" rel="stylesheet">',
+        '<style>.hero { background: url("assets/background.png"); }</style>',
         '</body></html>',
       ].join(''),
     );
-    await writeProjectFile(projectId, 'assets/hero.png', 'hero-bytes');
     bindPersonalProject(projectId, workspaceId, workspaceMemberId);
 
     const scopeQuery = new URLSearchParams({ workspaceId, workspaceMemberId });
@@ -178,12 +185,16 @@ describe('project preview containment routes', () => {
     );
     expect(response.status).toBe(200);
     const html = await response.text();
+    const scopedAssetUrl = (assetPath: string) =>
+      `/api/projects/${projectId}/raw/${assetPath}?workspaceId=${workspaceId}`
+      + `&workspaceMemberId=${workspaceMemberId}`;
 
     expect(html).toContain(`<script>${script}</script>`);
-    expect(html).toContain(
-      `/api/projects/${projectId}/raw/assets/hero.png?workspaceId=${workspaceId}`
-      + `&workspaceMemberId=${workspaceMemberId}`,
-    );
+    expect(html).toContain(`<script src="${scopedAssetUrl('assets/external.js')}">`);
+    expect(html).toContain(`<img src="${scopedAssetUrl('assets/image.png')}"`);
+    expect(html).toContain(`srcset="${scopedAssetUrl('assets/image-1x.png')} 1x"`);
+    expect(html).toContain(`<link href="${scopedAssetUrl('assets/theme.css')}"`);
+    expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
   });
 
   it('serves generated PNG assets through preview scopes and clearly 404s missing image references', async () => {
@@ -427,7 +438,13 @@ describe('project preview HTML rewriting', () => {
       '</body></html>',
     ].join('');
 
-    const rewritten = rewriteCssUrlsOutsideScripts(html, rewriteReference);
+    const rewritten = rewriteOutsideScriptContents(html, (chunk) =>
+      chunk.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (match, quote: string, reference: string) => {
+        const rewrittenReference = rewriteReference(reference);
+        return rewrittenReference === reference
+          ? match
+          : `url(${quote}${rewrittenReference}${quote})`;
+      }));
 
     expect(rewritten).toContain(`<script>${script}</script>`);
     expect(rewritten).toContain('url("/preview/assets/hero.png")');
@@ -436,6 +453,7 @@ describe('project preview HTML rewriting', () => {
   it('preserves an unclosed script through the end of the document', () => {
     const html = '<script>const url = "blob:preview"; URL.revokeObjectURL(url)';
 
-    expect(rewriteCssUrlsOutsideScripts(html, rewriteReference)).toBe(html);
+    expect(rewriteOutsideScriptContents(html, (chunk) =>
+      chunk.replace('blob:preview', rewriteReference('blob:preview')))).toBe(html);
   });
 });

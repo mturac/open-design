@@ -122,35 +122,29 @@ import { localPluginRegistryScope } from '../../plugins/local-source.js';
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
 
-export function rewriteCssUrlsOutsideScripts(
+export function rewriteOutsideScriptContents(
   html: string,
-  rewriteReference: (reference: string) => string,
+  rewriteChunk: (chunk: string) => string,
 ): string {
-  const cssUrl = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
-  const rewriteCssUrls = (value: string): string =>
-    value.replace(cssUrl, (match, quote: string, reference: string) => {
-      const rewritten = rewriteReference(reference);
-      return rewritten === reference ? match : `url(${quote}${rewritten}${quote})`;
-    });
   const scriptRanges = load(html, { sourceCodeLocationInfo: true }, false)('script')
     .toArray()
     .flatMap((node) => {
       const location = node.sourceCodeLocation;
       if (!location?.startTag) return [];
       return [{
-        start: location.startTag.startOffset,
-        end: location.endTag?.endOffset ?? html.length,
+        start: location.startTag.endOffset,
+        end: location.endTag?.startOffset ?? html.length,
       }];
     });
 
   let rewrittenHtml = '';
   let cursor = 0;
   for (const range of scriptRanges) {
-    rewrittenHtml += rewriteCssUrls(html.slice(cursor, range.start));
+    rewrittenHtml += rewriteChunk(html.slice(cursor, range.start));
     rewrittenHtml += html.slice(range.start, range.end);
     cursor = range.end;
   }
-  return rewrittenHtml + rewriteCssUrls(html.slice(cursor));
+  return rewrittenHtml + rewriteChunk(html.slice(cursor));
 }
 
 function parseLocalCatalogScope(value: unknown, field: string): LocalCatalogScope | null {
@@ -5466,6 +5460,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
     const linkTag = /<link\b[^>]*>/gi;
     const linkHref = /(\shref\s*=\s*)(["'])([^"']*)\2/i;
     const srcsetAttr = /(\ssrcset\s*=\s*)(["'])([^"']*)\2/gi;
+    const cssUrl = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
     const ownerDir = path.posix.dirname(ownerFilePath);
     const scopeQuery = `workspaceId=${encodeURIComponent(workspaceId)}`
       + `&workspaceMemberId=${encodeURIComponent(workspaceMemberId)}`;
@@ -5493,39 +5488,46 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       return `${scoped}&${suffix.slice(1)}`;
     };
 
-    let next = html.replace(
-      assetAttr,
-      (match, space: string, name: string, eq: string, quote: string, value: string) => {
-        const rewritten = rewrite(value);
-        return rewritten === value ? match : `${space}${name}${eq}${quote}${rewritten}${quote}`;
-      },
-    );
-    next = next.replace(linkTag, (tag) =>
-      tag.replace(linkHref, (match, prefix: string, quote: string, value: string) => {
-        const rewritten = rewrite(value);
+    const rewriteChunk = (chunk: string): string => {
+      let next = chunk.replace(
+        assetAttr,
+        (match, space: string, name: string, eq: string, quote: string, value: string) => {
+          const rewritten = rewrite(value);
+          return rewritten === value ? match : `${space}${name}${eq}${quote}${rewritten}${quote}`;
+        },
+      );
+      next = next.replace(linkTag, (tag) =>
+        tag.replace(linkHref, (match, prefix: string, quote: string, value: string) => {
+          const rewritten = rewrite(value);
+          return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
+        }),
+      );
+      next = next.replace(srcsetAttr, (match, prefix: string, quote: string, value: string) => {
+        // A data URL contains an unescaped comma, so the lightweight candidate
+        // splitter below cannot safely rewrite a mixed data-URL srcset. Leave the
+        // whole attribute untouched rather than corrupting embedded bytes.
+        if (/(?:^|,\s*)data:/i.test(value)) return match;
+        const rewritten = value
+          .split(',')
+          .map((candidate) => {
+            const body = candidate.trim();
+            if (!body) return candidate;
+            const [url = '', ...descriptors] = body.split(/\s+/);
+            const rewrittenUrl = rewrite(url);
+            if (rewrittenUrl === url) return candidate;
+            const leading = candidate.match(/^\s*/)?.[0] ?? '';
+            return `${leading}${[rewrittenUrl, ...descriptors].join(' ')}`;
+          })
+          .join(',');
         return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
-      }),
-    );
-    next = next.replace(srcsetAttr, (match, prefix: string, quote: string, value: string) => {
-      // A data URL contains an unescaped comma, so the lightweight candidate
-      // splitter below cannot safely rewrite a mixed data-URL srcset. Leave the
-      // whole attribute untouched rather than corrupting embedded bytes.
-      if (/(?:^|,\s*)data:/i.test(value)) return match;
-      const rewritten = value
-        .split(',')
-        .map((candidate) => {
-          const body = candidate.trim();
-          if (!body) return candidate;
-          const [url = '', ...descriptors] = body.split(/\s+/);
-          const rewrittenUrl = rewrite(url);
-          if (rewrittenUrl === url) return candidate;
-          const leading = candidate.match(/^\s*/)?.[0] ?? '';
-          return `${leading}${[rewrittenUrl, ...descriptors].join(' ')}`;
-        })
-        .join(',');
-      return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
-    });
-    return rewriteCssUrlsOutsideScripts(next, rewrite);
+      });
+      return next.replace(cssUrl, (match, quote: string, value: string) => {
+        const rewritten = rewrite(value);
+        return rewritten === value ? match : `url(${quote}${rewritten}${quote})`;
+      });
+    };
+
+    return rewriteOutsideScriptContents(html, rewriteChunk);
   }
 
   async function maybeResolveVitePreviewHtml({
