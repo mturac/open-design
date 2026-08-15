@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ensureWorkspaceProject, openDatabase } from '../src/db.js';
 import { startServer } from '../src/server.js';
-import { rewriteOutsideScriptContents } from '../src/routes/project/index.js';
+import { rewriteOutsideExecutableHtmlRanges } from '../src/routes/project/index.js';
 
 describe('project preview containment routes', () => {
   let server: http.Server;
@@ -160,6 +160,7 @@ describe('project preview containment routes', () => {
       "const cssText = 'background: url(\"assets/runtime.png\")';",
       "const url = 'blob:preview'; URL.revokeObjectURL(url);",
     ].join(' ');
+    const inlineHandler = 'URL.revokeObjectURL(url)';
     await writeProjectFile(
       projectId,
       'index.html',
@@ -171,7 +172,8 @@ describe('project preview containment routes', () => {
         '<script src="assets/external.js"></script>',
         `<script>${script}</script>`,
         '</head><body>',
-        '<img src="assets/image.png" srcset="assets/image-1x.png 1x">',
+        `<button onclick="${inlineHandler}" style="background: url(assets/button.png)">Revoke</button>`,
+        `<img src="assets/image.png" srcset="assets/image-1x.png 1x" onerror="${inlineHandler}">`,
         '<link href="assets/theme.css" rel="stylesheet">',
         '<style>.hero { background: url("assets/background.png"); }</style>',
         '</body></html>',
@@ -190,8 +192,14 @@ describe('project preview containment routes', () => {
       + `&workspaceMemberId=${workspaceMemberId}`;
 
     expect(html).toContain(`<script>${script}</script>`);
+    expect(html).toContain(
+      `onclick="${inlineHandler}" style="background: url(${scopedAssetUrl('assets/button.png')})"`,
+    );
     expect(html).toContain(`<script src="${scopedAssetUrl('assets/external.js')}">`);
-    expect(html).toContain(`<img src="${scopedAssetUrl('assets/image.png')}"`);
+    expect(html).toContain(
+      `<img src="${scopedAssetUrl('assets/image.png')}"`
+      + ` srcset="${scopedAssetUrl('assets/image-1x.png')} 1x" onerror="${inlineHandler}">`,
+    );
     expect(html).toContain(`srcset="${scopedAssetUrl('assets/image-1x.png')} 1x"`);
     expect(html).toContain(`<link href="${scopedAssetUrl('assets/theme.css')}"`);
     expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
@@ -438,7 +446,7 @@ describe('project preview HTML rewriting', () => {
       '</body></html>',
     ].join('');
 
-    const rewritten = rewriteOutsideScriptContents(html, (chunk) =>
+    const rewritten = rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
       chunk.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (match, quote: string, reference: string) => {
         const rewrittenReference = rewriteReference(reference);
         return rewrittenReference === reference
@@ -450,10 +458,28 @@ describe('project preview HTML rewriting', () => {
     expect(rewritten).toContain('url("/preview/assets/hero.png")');
   });
 
+  it('preserves executable HTML attributes while rewriting CSS URLs', () => {
+    const html = [
+      '<button onclick="URL.revokeObjectURL(url)" style="background: url(assets/hero.png)">Revoke</button>',
+      '<a href="javascript:URL.revokeObjectURL(url)">Revoke</a>',
+      '<iframe srcdoc="<script>URL.revokeObjectURL(url)</script>"></iframe>',
+    ].join('');
+
+    const rewritten = rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
+      chunk.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (_match, quote: string, reference: string) =>
+        `url(${quote}${rewriteReference(reference)}${quote})`));
+
+    expect(rewritten).toContain(
+      'onclick="URL.revokeObjectURL(url)" style="background: url(/preview/assets/hero.png)"',
+    );
+    expect(rewritten).toContain('href="javascript:URL.revokeObjectURL(url)"');
+    expect(rewritten).toContain('srcdoc="<script>URL.revokeObjectURL(url)</script>"');
+  });
+
   it('preserves an unclosed script through the end of the document', () => {
     const html = '<script>const url = "blob:preview"; URL.revokeObjectURL(url)';
 
-    expect(rewriteOutsideScriptContents(html, (chunk) =>
+    expect(rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
       chunk.replace('blob:preview', rewriteReference('blob:preview')))).toBe(html);
   });
 });

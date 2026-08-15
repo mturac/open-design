@@ -122,11 +122,12 @@ import { localPluginRegistryScope } from '../../plugins/local-source.js';
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
 
-export function rewriteOutsideScriptContents(
+export function rewriteOutsideExecutableHtmlRanges(
   html: string,
   rewriteChunk: (chunk: string) => string,
 ): string {
-  const scriptRanges = load(html, { sourceCodeLocationInfo: true }, false)('script')
+  const $ = load(html, { sourceCodeLocationInfo: true }, false);
+  const scriptRanges = $('script')
     .toArray()
     .flatMap((node) => {
       const location = node.sourceCodeLocation;
@@ -136,10 +137,43 @@ export function rewriteOutsideScriptContents(
         end: location.endTag?.startOffset ?? html.length,
       }];
     });
+  const executableAttributeRanges = $('*')
+    .toArray()
+    .flatMap((node) => {
+      const sourceLocation = node.sourceCodeLocation;
+      if (!sourceLocation || !('attrs' in sourceLocation)) return [];
+      const attributes = sourceLocation.attrs as Record<string, {
+        startOffset: number;
+        endOffset: number;
+      }> | undefined;
+      return Object.entries(attributes ?? {}).flatMap(([name, location]) => {
+        const value = $(node).attr(name) ?? '';
+        const normalizedName = name.toLowerCase();
+        if (
+          normalizedName.startsWith('on')
+          || normalizedName === 'srcdoc'
+          || /^\s*javascript:/i.test(value)
+        ) {
+          return [{ start: location.startOffset, end: location.endOffset }];
+        }
+        return [];
+      });
+    });
+  const protectedRanges = [...scriptRanges, ...executableAttributeRanges]
+    .sort((left, right) => left.start - right.start)
+    .reduce<Array<{ start: number; end: number }>>((ranges, range) => {
+      const previous = ranges.at(-1);
+      if (!previous || range.start > previous.end) {
+        ranges.push({ ...range });
+      } else {
+        previous.end = Math.max(previous.end, range.end);
+      }
+      return ranges;
+    }, []);
 
   let rewrittenHtml = '';
   let cursor = 0;
-  for (const range of scriptRanges) {
+  for (const range of protectedRanges) {
     rewrittenHtml += rewriteChunk(html.slice(cursor, range.start));
     rewrittenHtml += html.slice(range.start, range.end);
     cursor = range.end;
@@ -5527,7 +5561,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       });
     };
 
-    return rewriteOutsideScriptContents(html, rewriteChunk);
+    return rewriteOutsideExecutableHtmlRanges(html, rewriteChunk);
   }
 
   async function maybeResolveVitePreviewHtml({
