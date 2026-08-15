@@ -174,7 +174,8 @@ describe('project preview containment routes', () => {
         '</head><body>',
         `<button onclick="${inlineHandler}" style="background: url(assets/button.png)">Revoke</button>`,
         `<img src="assets/image.png" srcset="assets/image-1x.png 1x" onerror="${inlineHandler}">`,
-        '<link href="assets/theme.css" rel="stylesheet">',
+        `<link onload="${inlineHandler}" href="assets/theme-before.css" rel="stylesheet">`,
+        `<link href="assets/theme-after.css" onload="${inlineHandler}" rel="stylesheet">`,
         '<style>.hero { background: url("assets/background.png"); }</style>',
         '</body></html>',
       ].join(''),
@@ -201,7 +202,12 @@ describe('project preview containment routes', () => {
       + ` srcset="${scopedAssetUrl('assets/image-1x.png')} 1x" onerror="${inlineHandler}">`,
     );
     expect(html).toContain(`srcset="${scopedAssetUrl('assets/image-1x.png')} 1x"`);
-    expect(html).toContain(`<link href="${scopedAssetUrl('assets/theme.css')}"`);
+    expect(html).toContain(
+      `<link onload="${inlineHandler}" href="${scopedAssetUrl('assets/theme-before.css')}"`,
+    );
+    expect(html).toContain(
+      `<link href="${scopedAssetUrl('assets/theme-after.css')}" onload="${inlineHandler}"`,
+    );
     expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
   });
 
@@ -481,5 +487,18 @@ describe('project preview HTML rewriting', () => {
 
     expect(rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
       chunk.replace('blob:preview', rewriteReference('blob:preview')))).toBe(html);
+  });
+
+  it('avoids collisions with protected range markers already in the document', () => {
+    const script = 'const marker = "__OD_PROTECTED_HTML_RANGE_";';
+    const html = `<style>.__OD_PROTECTED_HTML_RANGE_ { background: url(assets/hero.png); }</style>`
+      + `<script>${script}</script>`;
+
+    const rewritten = rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
+      chunk.replace('assets/hero.png', rewriteReference('assets/hero.png')));
+
+    expect(rewritten).toContain('.__OD_PROTECTED_HTML_RANGE_');
+    expect(rewritten).toContain('url(/preview/assets/hero.png)');
+    expect(rewritten).toContain(`<script>${script}</script>`);
   });
 });

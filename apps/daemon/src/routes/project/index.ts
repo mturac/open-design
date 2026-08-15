@@ -171,14 +171,26 @@ export function rewriteOutsideExecutableHtmlRanges(
       return ranges;
     }, []);
 
-  let rewrittenHtml = '';
+  let markerPrefix = '__OD_PROTECTED_HTML_RANGE_';
+  while (html.includes(markerPrefix)) markerPrefix = `_${markerPrefix}`;
+
+  const protectedValues: Array<{ marker: string; value: string }> = [];
+  let maskedHtml = '';
   let cursor = 0;
-  for (const range of protectedRanges) {
-    rewrittenHtml += rewriteChunk(html.slice(cursor, range.start));
-    rewrittenHtml += html.slice(range.start, range.end);
+  for (const [index, range] of protectedRanges.entries()) {
+    const marker = `${markerPrefix}${index}__`;
+    maskedHtml += html.slice(cursor, range.start);
+    maskedHtml += marker;
+    protectedValues.push({ marker, value: html.slice(range.start, range.end) });
     cursor = range.end;
   }
-  return rewrittenHtml + rewriteChunk(html.slice(cursor));
+  maskedHtml += html.slice(cursor);
+
+  let rewrittenHtml = rewriteChunk(maskedHtml);
+  for (const { marker, value } of protectedValues) {
+    rewrittenHtml = rewrittenHtml.split(marker).join(value);
+  }
+  return rewrittenHtml;
 }
 
 function parseLocalCatalogScope(value: unknown, field: string): LocalCatalogScope | null {
