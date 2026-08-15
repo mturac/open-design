@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
+import { load } from 'cheerio';
 import type { Express, Request, Response } from 'express';
 import {
   PREVIEW_OBSERVABILITY_BRIDGE_MARKER,
@@ -120,6 +121,37 @@ import {
 import { localPluginRegistryScope } from '../../plugins/local-source.js';
 import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import { cancelRunsOwnedBy } from './cancel-owned-runs.js';
+
+export function rewriteCssUrlsOutsideScripts(
+  html: string,
+  rewriteReference: (reference: string) => string,
+): string {
+  const cssUrl = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
+  const rewriteCssUrls = (value: string): string =>
+    value.replace(cssUrl, (match, quote: string, reference: string) => {
+      const rewritten = rewriteReference(reference);
+      return rewritten === reference ? match : `url(${quote}${rewritten}${quote})`;
+    });
+  const scriptRanges = load(html, { sourceCodeLocationInfo: true }, false)('script')
+    .toArray()
+    .flatMap((node) => {
+      const location = node.sourceCodeLocation;
+      if (!location?.startTag) return [];
+      return [{
+        start: location.startTag.startOffset,
+        end: location.endTag?.endOffset ?? html.length,
+      }];
+    });
+
+  let rewrittenHtml = '';
+  let cursor = 0;
+  for (const range of scriptRanges) {
+    rewrittenHtml += rewriteCssUrls(html.slice(cursor, range.start));
+    rewrittenHtml += html.slice(range.start, range.end);
+    cursor = range.end;
+  }
+  return rewrittenHtml + rewriteCssUrls(html.slice(cursor));
+}
 
 function parseLocalCatalogScope(value: unknown, field: string): LocalCatalogScope | null {
   if (value === undefined || value === null) return null;
@@ -5434,7 +5466,6 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
     const linkTag = /<link\b[^>]*>/gi;
     const linkHref = /(\shref\s*=\s*)(["'])([^"']*)\2/i;
     const srcsetAttr = /(\ssrcset\s*=\s*)(["'])([^"']*)\2/gi;
-    const cssUrl = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
     const ownerDir = path.posix.dirname(ownerFilePath);
     const scopeQuery = `workspaceId=${encodeURIComponent(workspaceId)}`
       + `&workspaceMemberId=${encodeURIComponent(workspaceMemberId)}`;
@@ -5494,10 +5525,7 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
         .join(',');
       return rewritten === value ? match : `${prefix}${quote}${rewritten}${quote}`;
     });
-    return next.replace(cssUrl, (match, quote: string, value: string) => {
-      const rewritten = rewrite(value);
-      return rewritten === value ? match : `url(${quote}${rewritten}${quote})`;
-    });
+    return rewriteCssUrlsOutsideScripts(next, rewrite);
   }
 
   async function maybeResolveVitePreviewHtml({

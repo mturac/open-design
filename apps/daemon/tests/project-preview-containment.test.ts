@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { ensureWorkspaceProject, openDatabase } from '../src/db.js';
 import { startServer } from '../src/server.js';
+import { rewriteCssUrlsOutsideScripts } from '../src/routes/project/index.js';
 
 describe('project preview containment routes', () => {
   let server: http.Server;
@@ -146,6 +147,43 @@ describe('project preview containment routes', () => {
     expect(assetResponse.headers.get('access-control-allow-origin')).toBe('*');
     expect(assetResponse.headers.get('content-type')).toContain('text/css');
     expect(await assetResponse.text()).toContain('color: black');
+  });
+
+  it('preserves script contents while rewriting workspace-scoped CSS asset URLs', async () => {
+    const workspaceId = `workspace-${randomUUID()}`;
+    const workspaceMemberId = `member-${randomUUID()}`;
+    const projectId = await createProject({ entryFile: 'index.html' });
+    const script = "const cssText = 'background: url(\"assets/runtime.png\")'; "
+      + "const url = 'blob:preview'; URL.revokeObjectURL(url);";
+    await writeProjectFile(
+      projectId,
+      'index.html',
+      [
+        '<!doctype html>',
+        '<html><head>',
+        '<!-- code sample: <script> -->',
+        '<textarea><script></textarea>',
+        `<script>${script}</script>`,
+        '</head><body>',
+        '<style>.hero { background: url("assets/hero.png"); }</style>',
+        '</body></html>',
+      ].join(''),
+    );
+    await writeProjectFile(projectId, 'assets/hero.png', 'hero-bytes');
+    bindPersonalProject(projectId, workspaceId, workspaceMemberId);
+
+    const scopeQuery = new URLSearchParams({ workspaceId, workspaceMemberId });
+    const response = await fetch(
+      `${baseUrl}/api/projects/${projectId}/raw/index.html?${scopeQuery}`,
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(html).toContain(`<script>${script}</script>`);
+    expect(html).toContain(
+      `/api/projects/${projectId}/raw/assets/hero.png?workspaceId=${workspaceId}`
+      + `&workspaceMemberId=${workspaceMemberId}`,
+    );
   });
 
   it('serves generated PNG assets through preview scopes and clearly 404s missing image references', async () => {
@@ -370,5 +408,34 @@ describe('project preview containment routes', () => {
       `${baseUrl}/api/projects/${projectId}/preview-url?file=${encodeURIComponent('../index.html')}`,
     );
     expect(escapingPath.status).toBe(400);
+  });
+});
+
+describe('project preview HTML rewriting', () => {
+  const rewriteReference = (reference: string): string => `/preview/${reference}`;
+
+  it('preserves scripts while rewriting CSS URLs elsewhere in the document', () => {
+    const script = "const css = 'url(\"assets/runtime.png\")'; "
+      + "const url = 'blob:preview'; URL.revokeObjectURL(url);";
+    const html = [
+      '<!doctype html><html><head>',
+      '<!-- code sample: <script> -->',
+      '<textarea><script></textarea>',
+      `<script>${script}</script>`,
+      '</head><body>',
+      '<style>.hero { background: url("assets/hero.png"); }</style>',
+      '</body></html>',
+    ].join('');
+
+    const rewritten = rewriteCssUrlsOutsideScripts(html, rewriteReference);
+
+    expect(rewritten).toContain(`<script>${script}</script>`);
+    expect(rewritten).toContain('url("/preview/assets/hero.png")');
+  });
+
+  it('preserves an unclosed script through the end of the document', () => {
+    const html = '<script>const url = "blob:preview"; URL.revokeObjectURL(url)';
+
+    expect(rewriteCssUrlsOutsideScripts(html, rewriteReference)).toBe(html);
   });
 });
