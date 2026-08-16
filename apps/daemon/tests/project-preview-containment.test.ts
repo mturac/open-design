@@ -161,6 +161,7 @@ describe('project preview containment routes', () => {
       "const url = 'blob:preview'; URL.revokeObjectURL(url);",
     ].join(' ');
     const inlineHandler = 'URL.revokeObjectURL(url)';
+    const dataUrl = 'data:text/html,<script>URL.revokeObjectURL(url)</script>';
     await writeProjectFile(
       projectId,
       'index.html',
@@ -176,6 +177,7 @@ describe('project preview containment routes', () => {
         `<img src="assets/image.png" srcset="assets/image-1x.png 1x" onerror="${inlineHandler}">`,
         `<link onload="${inlineHandler}" href="assets/theme-before.css" rel="stylesheet">`,
         `<link href="assets/theme-after.css" onload="${inlineHandler}" rel="stylesheet">`,
+        `<iframe src="${dataUrl}"></iframe>`,
         '<style>.hero { background: url("assets/background.png"); }</style>',
         '</body></html>',
       ].join(''),
@@ -208,6 +210,7 @@ describe('project preview containment routes', () => {
     expect(html).toContain(
       `<link href="${scopedAssetUrl('assets/theme-after.css')}" onload="${inlineHandler}"`,
     );
+    expect(html).toContain(`<iframe src="${dataUrl}"></iframe>`);
     expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
   });
 
@@ -501,4 +504,19 @@ describe('project preview HTML rewriting', () => {
     expect(rewritten).toContain('url(/preview/assets/hero.png)');
     expect(rewritten).toContain(`<script>${script}</script>`);
   });
+
+  it('bounds marker allocation for long prefix-like input', () => {
+    const script = 'const url = "blob:preview"; URL.revokeObjectURL(url);';
+    const html = `${'_'.repeat(100_000)}__OD_PROTECTED_HTML_RANGE_`
+      + `<style>body { background: url(assets/hero.png); }</style>`
+      + `<script>${script}</script>`;
+    const startedAt = performance.now();
+
+    const rewritten = rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
+      chunk.replace('assets/hero.png', rewriteReference('assets/hero.png')));
+
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    expect(rewritten).toContain('url(/preview/assets/hero.png)');
+    expect(rewritten).toContain(`<script>${script}</script>`);
+  }, 15_000);
 });

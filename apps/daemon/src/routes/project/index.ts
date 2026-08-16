@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { load } from 'cheerio';
@@ -153,6 +153,7 @@ export function rewriteOutsideExecutableHtmlRanges(
           normalizedName.startsWith('on')
           || normalizedName === 'srcdoc'
           || /^\s*javascript:/i.test(value)
+          || /^\s*data:/i.test(value)
         ) {
           return [{ start: location.startOffset, end: location.endOffset }];
         }
@@ -171,8 +172,15 @@ export function rewriteOutsideExecutableHtmlRanges(
       return ranges;
     }, []);
 
-  let markerPrefix = '__OD_PROTECTED_HTML_RANGE_';
-  while (html.includes(markerPrefix)) markerPrefix = `_${markerPrefix}`;
+  let markerPrefix: string | null = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const candidate = `__OD_PROTECTED_HTML_RANGE_${randomUUID()}_`;
+    if (!html.includes(candidate)) {
+      markerPrefix = candidate;
+      break;
+    }
+  }
+  if (!markerPrefix) throw new Error('Unable to allocate protected HTML marker');
 
   const protectedValues: Array<{ marker: string; value: string }> = [];
   let maskedHtml = '';
