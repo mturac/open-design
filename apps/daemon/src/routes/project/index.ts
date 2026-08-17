@@ -132,9 +132,13 @@ export function rewriteOutsideExecutableHtmlRanges(
     .flatMap((node) => {
       const location = node.sourceCodeLocation;
       if (!location?.startTag) return [];
+      const startTag = html.slice(location.startTag.startOffset, location.startTag.endOffset);
+      const isSelfClosingForeignScript = node.namespace !== 'http://www.w3.org/1999/xhtml'
+        && startTag.endsWith('/>');
       return [{
         start: location.startTag.endOffset,
-        end: location.endTag?.startOffset ?? html.length,
+        end: location.endTag?.startOffset
+          ?? (isSelfClosingForeignScript ? location.startTag.endOffset : html.length),
       }];
     });
   const executableAttributeRanges = $('*')
@@ -149,11 +153,11 @@ export function rewriteOutsideExecutableHtmlRanges(
       return Object.entries(attributes ?? {}).flatMap(([name, location]) => {
         const value = $(node).attr(name) ?? '';
         const normalizedName = name.toLowerCase();
+        const normalizedSchemeValue = value.replace(/[\t\n\r]/g, '');
         if (
           normalizedName.startsWith('on')
           || normalizedName === 'srcdoc'
-          || /^\s*javascript:/i.test(value)
-          || /^\s*data:/i.test(value)
+          || /^\s*(?:javascript|vbscript|data):/i.test(normalizedSchemeValue)
         ) {
           return [{ start: location.startOffset, end: location.endOffset }];
         }

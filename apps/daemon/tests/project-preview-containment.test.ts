@@ -162,6 +162,9 @@ describe('project preview containment routes', () => {
     ].join(' ');
     const inlineHandler = 'URL.revokeObjectURL(url)';
     const dataUrl = 'data:text/html,<script>URL.revokeObjectURL(url)</script>';
+    const newlineJavascriptUrl = 'java\nscript:URL.revokeObjectURL(url)';
+    const tabJavascriptUrl = 'java\tscript:URL.revokeObjectURL(url)';
+    const vbscriptUrl = 'vbscript:URL.revokeObjectURL(url)';
     await writeProjectFile(
       projectId,
       'index.html',
@@ -178,6 +181,9 @@ describe('project preview containment routes', () => {
         `<link onload="${inlineHandler}" href="assets/theme-before.css" rel="stylesheet">`,
         `<link href="assets/theme-after.css" onload="${inlineHandler}" rel="stylesheet">`,
         `<iframe src="${dataUrl}"></iframe>`,
+        `<a href="${newlineJavascriptUrl}">Newline executable URL</a>`,
+        `<a href="${tabJavascriptUrl}">Tab executable URL</a>`,
+        `<a href="${vbscriptUrl}">Legacy executable URL</a>`,
         '<style>.hero { background: url("assets/background.png"); }</style>',
         '</body></html>',
       ].join(''),
@@ -211,6 +217,9 @@ describe('project preview containment routes', () => {
       `<link href="${scopedAssetUrl('assets/theme-after.css')}" onload="${inlineHandler}"`,
     );
     expect(html).toContain(`<iframe src="${dataUrl}"></iframe>`);
+    expect(html).toContain(`<a href="${newlineJavascriptUrl}">Newline executable URL</a>`);
+    expect(html).toContain(`<a href="${tabJavascriptUrl}">Tab executable URL</a>`);
+    expect(html).toContain(`<a href="${vbscriptUrl}">Legacy executable URL</a>`);
     expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
   });
 
@@ -490,6 +499,22 @@ describe('project preview HTML rewriting', () => {
 
     expect(rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
       chunk.replace('blob:preview', rewriteReference('blob:preview')))).toBe(html);
+  });
+
+  it('treats a self-closing slash on an HTML script as unclosed', () => {
+    const html = '<script/>const url = "blob:preview"; URL.revokeObjectURL(url)';
+
+    expect(rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
+      chunk.replace('blob:preview', rewriteReference('blob:preview')))).toBe(html);
+  });
+
+  it('continues rewriting after a self-closing SVG script', () => {
+    const html = '<svg><script src="runtime.js" /></svg>'
+      + '<style>body { background: url(assets/hero.png); }</style>';
+
+    expect(rewriteOutsideExecutableHtmlRanges(html, (chunk) =>
+      chunk.replace('assets/hero.png', rewriteReference('assets/hero.png'))))
+      .toContain('url(/preview/assets/hero.png)');
   });
 
   it('avoids collisions with protected range markers already in the document', () => {
