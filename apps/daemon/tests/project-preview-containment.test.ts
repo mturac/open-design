@@ -165,6 +165,8 @@ describe('project preview containment routes', () => {
     const newlineJavascriptUrl = 'java\nscript:URL.revokeObjectURL(url)';
     const tabJavascriptUrl = 'java\tscript:URL.revokeObjectURL(url)';
     const vbscriptUrl = 'vbscript:URL.revokeObjectURL(url)';
+    const xlinkJavascriptUrl = "javascript:url('assets/executable.svg')";
+    const xlinkDataUrl = "data:image/svg+xml,<svg onload=url('assets/data.svg')></svg>";
     await writeProjectFile(
       projectId,
       'index.html',
@@ -184,6 +186,8 @@ describe('project preview containment routes', () => {
         `<a href="${newlineJavascriptUrl}">Newline executable URL</a>`,
         `<a href="${tabJavascriptUrl}">Tab executable URL</a>`,
         `<a href="${vbscriptUrl}">Legacy executable URL</a>`,
+        `<svg><a xlink:href="${xlinkJavascriptUrl}">Namespaced executable URL</a></svg>`,
+        `<svg><a xlink:href="${xlinkDataUrl}">Namespaced data URL</a></svg>`,
         '<style>.hero { background: url("assets/background.png"); }</style>',
         '</body></html>',
       ].join(''),
@@ -220,6 +224,8 @@ describe('project preview containment routes', () => {
     expect(html).toContain(`<a href="${newlineJavascriptUrl}">Newline executable URL</a>`);
     expect(html).toContain(`<a href="${tabJavascriptUrl}">Tab executable URL</a>`);
     expect(html).toContain(`<a href="${vbscriptUrl}">Legacy executable URL</a>`);
+    expect(html).toContain(`xlink:href="${xlinkJavascriptUrl}"`);
+    expect(html).toContain(`xlink:href="${xlinkDataUrl}"`);
     expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
   });
 

@@ -150,9 +150,15 @@ export function rewriteOutsideExecutableHtmlRanges(
         startOffset: number;
         endOffset: number;
       }> | undefined;
+      const element = node as Extract<typeof node, { attribs: Record<string, string> }>;
+      // parse5 stores namespaced values by local name and keeps their source prefix separately.
+      const valuesBySourceName = new Map(Object.entries(element.attribs).map(([localName, value]) => {
+        const prefix = element['x-attribsPrefix']?.[localName];
+        return [(prefix ? `${prefix}:${localName}` : localName).toLowerCase(), value] as const;
+      }));
       return Object.entries(attributes ?? {}).flatMap(([name, location]) => {
-        const value = $(node).attr(name) ?? '';
         const normalizedName = name.toLowerCase();
+        const value = valuesBySourceName.get(normalizedName) ?? '';
         const normalizedSchemeValue = value.replace(/[\t\n\r]/g, '');
         if (
           normalizedName.startsWith('on')
