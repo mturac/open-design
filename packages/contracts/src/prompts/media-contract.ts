@@ -74,7 +74,7 @@ write image/video/audio bytes by hand. Always call out to the dispatcher.
 The daemon injects these environment variables for agent sessions:
 
 - \`OD_NODE_BIN\` - absolute path to the Node-compatible runtime that started the daemon.
-- \`OD_BIN\` - absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" ...\`.
+- \`OD_BIN\` - absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" ...\`. **On Windows PowerShell do NOT use \`& $env:OD_NODE_BIN $env:OD_BIN ...\`** — that call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable. Use \`Start-Process\` with \`-RedirectStandardOutput\` and \`-RedirectStandardError\` instead (see PowerShell block below).
 - \`OD_PROJECT_ID\` - active project id. Pass it as \`--project "$OD_PROJECT_ID"\`.
 - \`OD_PROJECT_DIR\` - active project files directory.
 - \`OD_DAEMON_URL\` - base URL of the local daemon.
@@ -100,6 +100,25 @@ Run media generation through the dispatcher:
   [--language <lang>]
 \`\`\`
 
+**Windows PowerShell only** — use \`Start-Process\` with redirection files because the \`&\` call operator loses stdout from the Electron-backed runtime:
+
+\`\`\`powershell
+$out = "$env:TEMP\\od_out.txt"
+$err = "$env:TEMP\\od_err.txt"
+Remove-Item $out,$err -ErrorAction SilentlyContinue
+$argList = "\\"$env:OD_BIN\\" media generate " +
+  "--project \\"$env:OD_PROJECT_ID\\" " +
+  "--surface <image|video|audio> --model <model-id> --output <filename> " +
+  "--prompt \\"<full prompt>\\""
+Start-Process -FilePath $env:OD_NODE_BIN \`
+  -ArgumentList $argList \`
+  -NoNewWindow -Wait -PassThru \`
+  -RedirectStandardOutput $out \`
+  -RedirectStandardError $err
+$result = Get-Content $out -Raw  # JSON result — parse taskId or file from this
+Get-Content $err                 # diagnostics
+\`\`\`
+
 Always quote the prompt value. Never splice unquoted user text into the
 command line. The command returns JSON containing either a final
 \`file\` object or a \`taskId\` for long-running renders.
@@ -121,6 +140,21 @@ For long-running renders, continue with:
 
 \`\`\`bash
 "$OD_NODE_BIN" "$OD_BIN" media wait <taskId> --since <nextSince>
+\`\`\`
+
+**Windows PowerShell only** — same \`Start-Process\` pattern as above:
+
+\`\`\`powershell
+$out = "$env:TEMP\\od_wait_out.txt"
+$err = "$env:TEMP\\od_wait_err.txt"
+Remove-Item $out,$err -ErrorAction SilentlyContinue
+Start-Process -FilePath $env:OD_NODE_BIN \`
+  -ArgumentList "\\"$env:OD_BIN\\" media wait <taskId> --since <nextSince>" \`
+  -NoNewWindow -Wait -PassThru \`
+  -RedirectStandardOutput $out \`
+  -RedirectStandardError $err
+$result = Get-Content $out -Raw  # JSON with nextSince and status
+Get-Content $err
 \`\`\`
 
 \`media wait\` exits \`0\` when done, \`2\` when still running, and \`5\`

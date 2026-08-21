@@ -214,7 +214,7 @@ prompt and the narration.
 The daemon spawns you with these env vars set (verify with \`echo\`):
 
 - \`OD_NODE_BIN\`    — absolute path to the Node-compatible runtime that started the daemon. Packaged desktop installs provide this even when the user has no system \`node\` on PATH.
-- \`OD_BIN\`         — absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" …\`.
+- \`OD_BIN\`         — absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" …\`. **On Windows PowerShell do NOT use \`& $env:OD_NODE_BIN $env:OD_BIN ...\`** — that call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable. Use \`Start-Process\` with \`-RedirectStandardOutput\` and \`-RedirectStandardError\` instead (see PowerShell block in the Invocation section below).
 - \`OD_PROJECT_ID\`  — the active project's id. Pass it as \`--project "$OD_PROJECT_ID"\`.
 - \`OD_PROJECT_DIR\` — the project's files folder (your cwd). Generated files land here.
 - \`OD_DAEMON_URL\`  — base URL of the local daemon, e.g. \`http://127.0.0.1:7456\`.
@@ -246,6 +246,25 @@ Run via your shell tool (Bash on Claude Code, exec on Codex/Gemini, etc.):
   [--audio-kind music|speech|sfx]   # audio only
   [--voice <provider-voice-id>]     # audio:speech only; omit to use provider default
   [--language <lang>]               # audio:speech only; language boost (e.g. Chinese,Yue for Cantonese)
+\`\`\`
+
+**Windows PowerShell only** — the \`&\` call operator silently drops stdout when \`OD_NODE_BIN\` points to the packaged Electron executable. Use \`Start-Process\` with redirection files instead:
+
+\`\`\`powershell
+$out = "$env:TEMP\\od_out.txt"
+$err = "$env:TEMP\\od_err.txt"
+Remove-Item $out,$err -ErrorAction SilentlyContinue
+$argList = "\\"$env:OD_BIN\\" media generate " +
+  "--project \\"$env:OD_PROJECT_ID\\" " +
+  "--surface <image|video|audio> --model <model-id> --output <filename> " +
+  "--prompt \\"<full prompt>\\""
+Start-Process -FilePath $env:OD_NODE_BIN \`
+  -ArgumentList $argList \`
+  -NoNewWindow -Wait -PassThru \`
+  -RedirectStandardOutput $out \`
+  -RedirectStandardError $err
+$result = Get-Content $out -Raw  # JSON result — read taskId or file from here
+Get-Content $err                 # diagnostics
 \`\`\`
 
 Always quote the prompt value. Use \`--prompt "<full prompt>"\` (or the
@@ -416,6 +435,41 @@ waiting silently for a single multi-minute call.
 **Always write your shell invocation as the full generate+wait loop above**, even
 for image models. \`flux-pro-ultra\` routinely takes 60–180s; \`sora-2\` and
 \`veo-3-fal\` take longer. In the wait loop, exit 2 means "keep polling, not an error."
+
+**Windows PowerShell only** — use \`Start-Process\` with redirection files for both \`media generate\` and \`media wait\`. The \`&\` call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable, so \`$result\` would be empty and the agent would never receive the \`taskId\` JSON.
+
+\`\`\`powershell
+function Invoke-OdMedia {
+  param([string]$ArgList)
+  $out = "$env:TEMP\\od_media_out.txt"
+  $err = "$env:TEMP\\od_media_err.txt"
+  Remove-Item $out,$err -ErrorAction SilentlyContinue
+  $p = Start-Process -FilePath $env:OD_NODE_BIN \`
+    -ArgumentList $ArgList \`
+    -NoNewWindow -Wait -PassThru \`
+    -RedirectStandardOutput $out \`
+    -RedirectStandardError $err
+  $output = Get-Content $out -Raw
+  Get-Content $err | Write-Host  # stream diagnostics
+  return @{ Output = $output; ExitCode = $p.ExitCode }
+}
+
+$gen = Invoke-OdMedia "\\"$env:OD_BIN\\" media generate --project \\"$env:OD_PROJECT_ID\\" --surface image --model gpt-image-2 --output output.png --prompt \\"<prompt>\\""
+if ($gen.ExitCode -ne 0) { throw $gen.Output }
+$last = ($gen.Output -split "\\n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
+$parsed = $last | ConvertFrom-Json
+$taskId = $parsed.taskId
+$since = if ($parsed.nextSince) { $parsed.nextSince } else { 0 }
+while ($taskId) {
+  $wait = Invoke-OdMedia "\\"$env:OD_BIN\\" media wait $taskId --since $since"
+  $wlast = ($wait.Output -split "\\n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
+  $wparsed = $wlast | ConvertFrom-Json
+  $since = if ($wparsed.nextSince) { $wparsed.nextSince } else { $since }
+  if ($wait.ExitCode -eq 0) { $taskId = $null }
+  elseif ($wait.ExitCode -ne 2) { throw $wait.Output }
+}
+$wlast  # final JSON with file result
+\`\`\`
 
 A note on \`fetch failed\` to \`127.0.0.1\`. The OD daemon runs on
 loopback in the same machine that spawned you, so it is essentially

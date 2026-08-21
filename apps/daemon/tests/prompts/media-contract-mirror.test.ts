@@ -32,6 +32,23 @@ function templateBody(path: string): string {
   throw new Error(`unterminated template literal in ${path}`);
 }
 
+function generationContractBody(path: string): string {
+  const source = readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+  const marker = 'export const MEDIA_GENERATION_CONTRACT = `';
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error(`MEDIA_GENERATION_CONTRACT not found in ${path}`);
+  let index = start + marker.length;
+  while (index < source.length) {
+    if (source[index] === '\\') {
+      index += 2;
+      continue;
+    }
+    if (source[index] === '`') return source.slice(start + marker.length, index);
+    index += 1;
+  }
+  throw new Error(`unterminated template literal in ${path}`);
+}
+
 describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
   const daemonBody = templateBody('../../src/prompts/media-contract.ts');
   const contractsBody = templateBody(
@@ -66,5 +83,22 @@ describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
     expect(daemonBody).toContain('错误代码：\\`{code}\\`');
     expect(normalized).toContain('structured dispatcher or provider error');
     expect(daemonBody).not.toContain('图片生成服务暂时不可用');
+  });
+
+  it('carries the Windows PowerShell Start-Process invocation for media generate and media wait', () => {
+    expect(contractsBody).not.toContain('& $env:OD_NODE_BIN $env:OD_BIN media generate');
+  });
+});
+
+describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
+  const contractsGen = generationContractBody(
+    '../../../../packages/contracts/src/prompts/media-contract.ts',
+  );
+
+  it('warns against the & call operator on Windows PowerShell', () => {
+    expect(contractsGen).toContain('Windows PowerShell');
+    expect(contractsGen).toContain('Start-Process');
+    expect(contractsGen).toContain('-RedirectStandardOutput');
+    expect(contractsGen).toContain('-RedirectStandardError');
   });
 });
