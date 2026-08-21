@@ -171,7 +171,12 @@ function collectFailureText(input: RunFailureClassificationInput): string {
 }
 
 function isHardQuotaText(text: string): boolean {
-  return /\b(session limit|usage limit|limit reached|quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|exceeded your current quota|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|用户额度不足|额度不足|预扣费额度失败/i
+  // Standalone `\bquota\b` is intentionally absent: advisory phrases such as
+  // "checking quota" in the daemon's own empty-output fallback message would
+  // otherwise match, misclassifying a retryable empty_output run as a
+  // non-retryable hard quota exhaustion.  Specific exhaustion phrases are
+  // listed below instead.
+  return /\b(session limit|usage limit|limit reached|quota exceeded|exceeded your current quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|用户额度不足|额度不足|预扣费额度失败/i
     .test(text);
 }
 
@@ -673,6 +678,9 @@ function classifyRunFailureBase(
   const errorCode = normalizeCode(input.errorCode ?? input.status.errorCode);
   const text = collectFailureText({ ...input, events });
   const retryableHint = latestRetryable(events);
+  // Compute once; used both for the early empty_output guard below and for the
+  // fatal_rpc_error promotion later in this function.
+  const runtimeCloseReason = readRuntimeCloseReason(events);
   const amrFailure = classifyAmrAccountFailure(text);
   const byokOpenCodeProviderNotFound = isByokOpenCodeProviderNotFoundText(
     input.agentId,
@@ -845,6 +853,21 @@ function classifyRunFailureBase(
     );
   }
 
+  // Prefer the structured rpc_close_reason=empty_output signal over text
+  // heuristics. The daemon's generic empty-output fallback message contains
+  // advisory phrases (e.g. "checking quota") that otherwise match
+  // isHardQuotaText and reclassify a retryable empty_output run as a
+  // non-retryable hard quota exhaustion.
+  if (runtimeCloseReason === 'empty_output') {
+    return classification(
+      'empty_output',
+      'empty_output',
+      inferFailureStageFromEvents(events, 'first_token_wait'),
+      retryableHint ?? true,
+      'retry',
+    );
+  }
+
   if (errorCode === 'RATE_LIMITED' || serviceFailure === 'RATE_LIMITED' || isHardQuotaText(text) || isRateLimitText(text)) {
     // Checked BEFORE the hard-quota reading: vela phrases its rolling per-model
     // window as "…usage limit…", which `isHardQuotaText` matches, so without
@@ -982,7 +1005,6 @@ function classifyRunFailureBase(
   // had a chance to claim auth, quota, upstream, prompt-size, and other known
   // failures. Unlike stream_error, fatal_rpc_error may have no structured SSE
   // error code at all, so it must also refine signal/unknown/exit fallbacks.
-  const runtimeCloseReason = readRuntimeCloseReason(events);
   if (
     runtimeCloseReason === 'fatal_rpc_error' &&
     (

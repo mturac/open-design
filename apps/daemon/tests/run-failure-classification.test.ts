@@ -1702,6 +1702,54 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     expect(result?.failure_detail).toBe('model_not_found');
     expect(result?.user_action).toBe('switch_model');
   });
+
+  // BYOK OpenCode empty-output runs end with rpc_close_reason=empty_output and
+  // a fallback message that includes advisory text like "checking quota".  The
+  // structured close reason must win over the text heuristic so the run is not
+  // misclassified as a non-retryable hard quota exhaustion.
+  it('classifies rpc_close_reason=empty_output as empty_output even when error text contains advisory "checking quota"', () => {
+    const fallbackMsg =
+      'Agent completed without producing any output. The model or provider may have returned an empty response. Check the agent logs for upstream errors, then try re-authenticating the agent, checking quota, or switching models.';
+    const result = classifyForAgent(
+      'byok-opencode',
+      'AGENT_EXECUTION_FAILED',
+      fallbackMsg,
+      [
+        errorEvent('AGENT_EXECUTION_FAILED', fallbackMsg, true),
+        runtimeCloseEvent('empty_output'),
+      ],
+    );
+    expect(result?.failure_category).toBe('empty_output');
+    expect(result?.failure_detail).toBe('empty_output');
+    expect(result?.retryable).toBe(true);
+    expect(result?.user_action).toBe('retry');
+  });
+
+  it('classifies rpc_close_reason=empty_output as empty_output without advisory text', () => {
+    const result = classifyForAgent(
+      'byok-opencode',
+      'AGENT_EXECUTION_FAILED',
+      'Agent completed without producing any output.',
+      [
+        errorEvent('AGENT_EXECUTION_FAILED', 'Agent completed without producing any output.', true),
+        runtimeCloseEvent('empty_output'),
+      ],
+    );
+    expect(result?.failure_category).toBe('empty_output');
+    expect(result?.failure_detail).toBe('empty_output');
+    expect(result?.retryable).toBe(true);
+    expect(result?.user_action).toBe('retry');
+  });
+
+  it('still classifies a genuine quota-exhaustion message as hard_quota', () => {
+    const result = classify(
+      'RATE_LIMITED',
+      'You have exceeded your current quota. Please check your plan and billing details.',
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('hard_quota');
+    expect(result?.retryable).toBe(false);
+  });
 });
 
 // The agent binary being absent at its resolved path also leaks into the opaque
