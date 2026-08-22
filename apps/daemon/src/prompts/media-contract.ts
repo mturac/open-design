@@ -248,26 +248,10 @@ Run via your shell tool (Bash on Claude Code, exec on Codex/Gemini, etc.):
   [--language <lang>]               # audio:speech only; language boost (e.g. Chinese,Yue for Cantonese)
 \`\`\`
 
-**Windows PowerShell only** — the \`&\` call operator silently drops stdout when \`OD_NODE_BIN\` points to the packaged Electron executable. Use \`Start-Process\` with redirection files instead:
-
-\`\`\`powershell
-$out = (New-TemporaryFile).FullName
-$err = (New-TemporaryFile).FullName
-$argList = @($env:OD_BIN, "media", "generate",
-  "--project", $env:OD_PROJECT_ID,
-  "--surface", "<image|video|audio>",
-  "--model", "<model-id>",
-  "--output", "<filename>",
-  "--prompt", "<full prompt>")
-Start-Process -FilePath $env:OD_NODE_BIN \`
-  -ArgumentList $argList \`
-  -NoNewWindow -Wait -PassThru \`
-  -RedirectStandardOutput $out \`
-  -RedirectStandardError $err
-$result = Get-Content $out -Raw  # JSON result — read taskId or file from here
-Get-Content $err                 # diagnostics
-Remove-Item $out,$err -ErrorAction SilentlyContinue
-\`\`\`
+**Windows PowerShell only** — the \`&\` call operator silently drops stdout when
+\`OD_NODE_BIN\` points to the packaged Electron executable. Use the complete
+\`Start-Process\` generate/wait helper under **All slow renders** below. It also
+handles renders that complete during the initial \`media generate\` call.
 
 Always quote the prompt value. Use \`--prompt "<full prompt>"\` (or the
 equivalent safe quoting for your shell) — never splice an unquoted user
@@ -441,39 +425,65 @@ for image models. \`flux-pro-ultra\` routinely takes 60–180s; \`sora-2\` and
 **Windows PowerShell only** — use \`Start-Process\` with redirection files for both \`media generate\` and \`media wait\`. The \`&\` call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable, so \`$result\` would be empty and the agent would never receive the \`taskId\` JSON.
 
 \`\`\`powershell
-function Invoke-OdMedia {
-  param([string[]]$ArgList)
-  $out = (New-TemporaryFile).FullName
-  $err = (New-TemporaryFile).FullName
-  $p = Start-Process -FilePath $env:OD_NODE_BIN \`
-    -ArgumentList $ArgList \`
-    -NoNewWindow -Wait -PassThru \`
-    -RedirectStandardOutput $out \`
-    -RedirectStandardError $err
-  $output = Get-Content $out -Raw
-  Get-Content $err | Write-Host  # stream diagnostics
-  Remove-Item $out,$err -ErrorAction SilentlyContinue
-  return @{ Output = $output; ExitCode = $p.ExitCode }
+function ConvertTo-OdProcessArgument {
+  param([AllowEmptyString()][string]$Value)
+
+  if ($Value.Length -gt 0 -and $Value -notmatch '[\\s"]') { return $Value }
+  $escaped = $Value -replace '(\\\\*)"', '$1$1\\\"'
+  $escaped = $escaped -replace '(\\\\+)$', '$1$1'
+  return '"' + $escaped + '"'
 }
 
-$genArgs = @($env:OD_BIN, "media", "generate", "--project", $env:OD_PROJECT_ID, "--surface", "image", "--model", "gpt-image-2", "--output", "output.png", "--prompt", "<prompt>")
-$gen = Invoke-OdMedia $genArgs
+function Invoke-OdMedia {
+  param(
+    [string[]]$ArgList,
+    [AllowNull()][string]$Prompt
+  )
+  $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ("od-media-" + [guid]::NewGuid().ToString("N"))
+  [void](New-Item -ItemType Directory -Path $tempDirectory -ErrorAction Stop)
+  $out = Join-Path $tempDirectory "stdout.txt"
+  $err = Join-Path $tempDirectory "stderr.txt"
+  try {
+    if ($PSBoundParameters.ContainsKey("Prompt")) {
+      $promptFile = Join-Path $tempDirectory "prompt.txt"
+      [IO.File]::WriteAllText($promptFile, $Prompt, [Text.UTF8Encoding]::new($false))
+      $ArgList += @("--prompt-file", $promptFile)
+    }
+    $arguments = ($ArgList | ForEach-Object { ConvertTo-OdProcessArgument $_ }) -join ' '
+    $p = Start-Process -FilePath $env:OD_NODE_BIN \`
+      -ArgumentList $arguments \`
+      -NoNewWindow -Wait -PassThru \`
+      -RedirectStandardOutput $out \`
+      -RedirectStandardError $err
+    $output = Get-Content -LiteralPath $out -Raw
+    Get-Content -LiteralPath $err | Write-Host  # stream diagnostics
+    return @{ Output = $output; ExitCode = $p.ExitCode }
+  } finally {
+    Remove-Item -LiteralPath $tempDirectory -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
+$prompt = @'
+<full prompt>
+'@
+$genArgs = @($env:OD_BIN, "media", "generate", "--project", $env:OD_PROJECT_ID, "--surface", "image", "--model", "gpt-image-2", "--output", "output.png")
+$gen = Invoke-OdMedia -ArgList $genArgs -Prompt $prompt
 if ($gen.ExitCode -ne 0) { throw $gen.Output }
 $last = ($gen.Output -split "\`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
 $parsed = $last | ConvertFrom-Json
 $taskId = $parsed.taskId
-$since = if ($parsed.nextSince) { $parsed.nextSince } else { 0 }
-$wlast = $last  # immediate completion: $wlast holds the file result if no taskId
+$since = if ($null -ne $parsed.nextSince) { $parsed.nextSince } else { 0 }
+$finalResult = $last
 while ($taskId) {
   $waitArgs = @($env:OD_BIN, "media", "wait", $taskId, "--since", $since)
-  $wait = Invoke-OdMedia $waitArgs
-  $wlast = ($wait.Output -split "\`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
-  $wparsed = $wlast | ConvertFrom-Json
-  $since = if ($wparsed.nextSince) { $wparsed.nextSince } else { $since }
+  $wait = Invoke-OdMedia -ArgList $waitArgs
+  $finalResult = ($wait.Output -split "\`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
+  $waitResult = $finalResult | ConvertFrom-Json
+  $since = if ($null -ne $waitResult.nextSince) { $waitResult.nextSince } else { $since }
   if ($wait.ExitCode -eq 0) { $taskId = $null }
   elseif ($wait.ExitCode -ne 2) { throw $wait.Output }
 }
-$wlast  # final JSON with file result
+$finalResult
 \`\`\`
 
 A note on \`fetch failed\` to \`127.0.0.1\`. The OD daemon runs on

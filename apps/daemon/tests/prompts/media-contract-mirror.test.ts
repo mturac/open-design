@@ -1,6 +1,20 @@
-import { readFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { composeSystemPrompt as composeByokSystemPrompt } from '@open-design/contracts';
 import { describe, expect, it } from 'vitest';
+import { MEDIA_GENERATION_CONTRACT as daemonGenerationContract } from '../../src/prompts/media-contract.js';
 
 // `MEDIA_USER_REPLY_CONTRACT` exists twice: the daemon owns the copy that
 // composeSystemPrompt actually renders, and packages/contracts carries an
@@ -21,23 +35,6 @@ function templateBody(path: string): string {
   let index = start + marker.length;
   // Scan for the terminating backtick, skipping escaped ones -- the body
   // itself contains \` around inline code, so a naive search truncates it.
-  while (index < source.length) {
-    if (source[index] === '\\') {
-      index += 2;
-      continue;
-    }
-    if (source[index] === '`') return source.slice(start + marker.length, index);
-    index += 1;
-  }
-  throw new Error(`unterminated template literal in ${path}`);
-}
-
-function generationContractBody(path: string): string {
-  const source = readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
-  const marker = 'export const MEDIA_GENERATION_CONTRACT = `';
-  const start = source.indexOf(marker);
-  if (start < 0) throw new Error(`MEDIA_GENERATION_CONTRACT not found in ${path}`);
-  let index = start + marker.length;
   while (index < source.length) {
     if (source[index] === '\\') {
       index += 2;
@@ -90,102 +87,331 @@ describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
   });
 });
 
-/**
- * Extract raw content of every ```powershell … ``` fence from a contract body.
- *
- * In the raw template-literal body returned by generationContractBody() the
- * backtick character is escaped as \`, so code fences appear as \`\`\`powershell
- * rather than the three plain backticks you see in the rendered text.
- */
 function extractPowershellBlocks(contractBody: string): string[] {
-  const re = /\\\`\\\`\\\`powershell\n([\s\S]*?)\\\`\\\`\\\`/g;
+  const re = /```powershell\r?\n([\s\S]*?)```/g;
   const blocks: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(contractBody)) !== null) blocks.push(m[1]);
+  while ((m = re.exec(contractBody)) !== null) {
+    const block = m[1];
+    if (block !== undefined) blocks.push(block);
+  }
   return blocks;
 }
 
-describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
-  const contractsGen = generationContractBody(
-    '../../../../packages/contracts/src/prompts/media-contract.ts',
+const renderedContracts = [
+  { name: 'daemon', body: daemonGenerationContract },
+  { name: 'BYOK', body: composeByokSystemPrompt({ skillMode: 'image' }) },
+] as const;
+
+function workflowBlock(contract: string): string {
+  const block = extractPowershellBlocks(contract).find((candidate) =>
+    candidate.includes('function Invoke-OdMedia'),
   );
-  const daemonGen = generationContractBody('../../src/prompts/media-contract.ts');
+  if (!block) throw new Error('PowerShell generate/wait workflow block not found');
+  return block;
+}
 
-  it('warns against the & call operator on Windows PowerShell', () => {
-    expect(contractsGen).toContain('Windows PowerShell');
-    expect(contractsGen).toContain('Start-Process');
-    expect(contractsGen).toContain('-RedirectStandardOutput');
-    expect(contractsGen).toContain('-RedirectStandardError');
+function findWindowsPowerShell(): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const candidates = ['powershell.exe', 'pwsh.exe'];
+  return candidates.find((candidate) => {
+    const probe = spawnSync(candidate, [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'exit 0',
+    ]);
+    return probe.status === 0;
+  });
+}
+
+const powerShell = findWindowsPowerShell();
+const prompt = [
+  'Warm "studio" portrait with soft window light and deliberate negative space.',
+  'Keep this multiline text intact: café, 東京, $literal, `backtick`, & | < > ; ().',
+  'Preserve quotes and backslashes exactly: "glass" C:\\references\\final\\',
+  'Use a restrained palette, realistic skin texture, and a long editorial composition.',
+].join('\n');
+const projectId = 'project with "quoted" spaces and trailing\\';
+
+const stubSource = String.raw`
+const fs = require('node:fs');
+const path = require('node:path');
+
+const args = process.argv.slice(2);
+const promptIndex = args.indexOf('--prompt-file');
+const promptPath = promptIndex >= 0 ? args[promptIndex + 1] : undefined;
+const entry = {
+  argv: args,
+  promptPath,
+  prompt: promptPath ? fs.readFileSync(promptPath, 'utf8') : undefined,
+};
+fs.appendFileSync(process.env.OD_STUB_LOG, JSON.stringify(entry) + '\n');
+
+const delayUntil = Date.now() + 150;
+while (Date.now() < delayUntil) {
+  // Keep redirect handles open long enough for concurrent fixture runs to overlap.
+}
+
+if (args[0] !== 'media') {
+  process.stderr.write('expected media command\n');
+  process.exitCode = 9;
+} else if (args[1] === 'generate') {
+  if (process.env.OD_STUB_MODE === 'immediate') {
+    process.stdout.write(JSON.stringify({ file: { name: 'output.png', kind: 'image' } }) + '\n');
+  } else {
+    process.stdout.write(JSON.stringify({ taskId: process.env.OD_STUB_RUN_ID + '-task', nextSince: 1 }) + '\n');
+  }
+} else if (args[1] === 'wait') {
+  const statePath = path.join(process.env.OD_STUB_STATE_DIR, process.env.OD_STUB_RUN_ID + '.txt');
+  const count = fs.existsSync(statePath) ? Number(fs.readFileSync(statePath, 'utf8')) + 1 : 1;
+  fs.writeFileSync(statePath, String(count));
+  if (count === 1) {
+    process.stdout.write(JSON.stringify({ taskId: args[2], status: 'running', nextSince: 2 }) + '\n');
+    process.exitCode = 2;
+  } else {
+    process.stdout.write(JSON.stringify({ file: { name: 'output.png', kind: 'image' } }) + '\n');
+  }
+} else {
+  process.stderr.write('unexpected media subcommand\n');
+  process.exitCode = 9;
+}
+`;
+
+interface StubInvocation {
+  argv: string[];
+  promptPath?: string;
+  prompt?: string;
+}
+
+interface RedirectTrace {
+  stdout: string;
+  stderr: string;
+}
+
+interface PowerShellResult {
+  contract: string;
+  mode: 'immediate' | 'queued';
+  runId: string;
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  invocations: StubInvocation[];
+  redirects: RedirectTrace[];
+}
+
+function instrumentedScript(block: string): string {
+  const executableBlock = block.replace(
+    /\$prompt = @'\r?\n<full prompt>\r?\n'@/,
+    '$prompt = $env:OD_TEST_PROMPT',
+  );
+  if (executableBlock === block) throw new Error('prompt placeholder not found');
+
+  return `
+$script:OdRedirectTrace = @()
+function Start-Process {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string]$ArgumentList,
+    [switch]$NoNewWindow,
+    [switch]$Wait,
+    [switch]$PassThru,
+    [string]$RedirectStandardOutput,
+    [string]$RedirectStandardError
+  )
+  $script:OdRedirectTrace += [pscustomobject]@{
+    stdout = $RedirectStandardOutput
+    stderr = $RedirectStandardError
+  }
+  Microsoft.PowerShell.Management\\Start-Process @PSBoundParameters
+}
+
+${executableBlock}
+
+$redirectJson = ConvertTo-Json -Compress -InputObject @($script:OdRedirectTrace)
+[IO.File]::WriteAllText($env:OD_TEST_REDIRECT_LOG, $redirectJson)
+`;
+}
+
+function executePowerShellExample(options: {
+  contract: string;
+  block: string;
+  mode: 'immediate' | 'queued';
+  root: string;
+  runtimePath: string;
+  stubPath: string;
+  runId: string;
+}): Promise<PowerShellResult> {
+  if (!powerShell) throw new Error('PowerShell executable is unavailable');
+  const scriptPath = join(options.root, `${options.runId}.ps1`);
+  const logPath = join(options.root, `${options.runId}.ndjson`);
+  const redirectLogPath = join(options.root, `${options.runId}-redirects.json`);
+  writeFileSync(scriptPath, instrumentedScript(options.block), 'utf8');
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      powerShell,
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        scriptPath,
+      ],
+      {
+        env: {
+          ...process.env,
+          TEMP: options.root,
+          TMP: options.root,
+          OD_NODE_BIN: options.runtimePath,
+          OD_BIN: options.stubPath,
+          OD_PROJECT_ID: projectId,
+          OD_TEST_PROMPT: prompt,
+          OD_STUB_MODE: options.mode,
+          OD_STUB_RUN_ID: options.runId,
+          OD_STUB_LOG: logPath,
+          OD_STUB_STATE_DIR: options.root,
+          OD_TEST_REDIRECT_LOG: redirectLogPath,
+        },
+        windowsHide: true,
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on('error', reject);
+    child.on('close', (status) => {
+      const invocations = existsSync(logPath)
+        ? readFileSync(logPath, 'utf8')
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as StubInvocation)
+        : [];
+      const redirects = existsSync(redirectLogPath)
+        ? (JSON.parse(readFileSync(redirectLogPath, 'utf8')) as RedirectTrace[])
+        : [];
+      resolve({
+        contract: options.contract,
+        mode: options.mode,
+        runId: options.runId,
+        status,
+        stdout,
+        stderr,
+        invocations,
+        redirects,
+      });
+    });
+  });
+}
+
+describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
+  it('keeps the executable generate/wait workflow identical in both rendered contracts', () => {
+    const blocks = renderedContracts.map(({ body }) => workflowBlock(body));
+    expect(blocks[0]).toBe(blocks[1]);
+    expect(blocks[0]).toContain('--prompt-file');
+    expect(blocks[0]).toContain('ConvertTo-OdProcessArgument');
+    expect(blocks[0]).toContain('-ArgumentList $arguments');
+    expect(blocks[0]).not.toContain('-ArgumentList $ArgList');
+    expect(blocks[0]).toContain('$PSBoundParameters.ContainsKey("Prompt")');
+    expect(blocks[0]).not.toContain('$null -ne $Prompt');
+    expect(blocks[0]).toContain('[guid]::NewGuid()');
+    expect(blocks[0]).toMatch(/try \{[\s\S]*finally \{/);
+    for (const block of blocks) {
+      expect(instrumentedScript(block)).toContain('$prompt = $env:OD_TEST_PROMPT');
+    }
   });
 
-  it('contracts: exposes two powershell blocks — one for generate, one for wait', () => {
-    const blocks = extractPowershellBlocks(contractsGen);
-    expect(blocks.length).toBeGreaterThanOrEqual(2);
-    expect(blocks[0]).toContain('media generate');
-    expect(blocks[1]).toContain('media wait');
-  });
+  it.skipIf(process.platform !== 'win32')(
+    'executes immediate and queued workflows concurrently without argv loss or redirect collisions',
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'open design [media] contract '));
+      const runtimePath = join(root, 'stub node runtime with spaces.exe');
+      const stubPath = join(root, 'stub runtime with spaces.cjs');
+      copyFileSync(process.execPath, runtimePath);
+      if (process.platform !== 'win32') chmodSync(runtimePath, 0o755);
+      writeFileSync(stubPath, stubSource, 'utf8');
+      try {
+        const runs = renderedContracts.flatMap(({ name, body }) =>
+          (['immediate', 'queued'] as const).map((mode) => ({
+            contract: name,
+            block: workflowBlock(body),
+            mode,
+            root,
+            runtimePath,
+            stubPath,
+            runId: `${name.toLowerCase()}-${mode}`,
+          })),
+        );
+        const results = await Promise.all(runs.map(executePowerShellExample));
+        const promptPaths = new Set<string>();
+        const redirectPaths = new Set<string>();
 
-  it('contracts: each powershell block contains a structurally complete Start-Process call', () => {
-    const required = [
-      'Start-Process',
-      '-FilePath $env:OD_NODE_BIN',
-      '-ArgumentList',
-      '-NoNewWindow',
-      '-Wait',
-      '-PassThru',
-      '-RedirectStandardOutput',
-      '-RedirectStandardError',
-      'Get-Content',
-    ] as const;
-    for (const block of extractPowershellBlocks(contractsGen)) {
-      for (const flag of required) {
-        expect(block, `flag "${flag}" missing from block`).toContain(flag);
+        for (const result of results) {
+          expect(result.status, `${result.contract}/${result.mode}: ${result.stderr}`).toBe(0);
+          expect(JSON.parse(result.stdout.trim())).toEqual({
+            file: { name: 'output.png', kind: 'image' },
+          });
+
+          const generate = result.invocations[0];
+          expect(generate?.argv).toEqual([
+            'media',
+            'generate',
+            '--project',
+            projectId,
+            '--surface',
+            'image',
+            '--model',
+            'gpt-image-2',
+            '--output',
+            'output.png',
+            '--prompt-file',
+            generate?.promptPath,
+          ]);
+          expect(generate?.prompt).toBe(prompt);
+          expect(generate?.promptPath).toEqual(expect.any(String));
+          expect(promptPaths.has(generate!.promptPath!)).toBe(false);
+          promptPaths.add(generate!.promptPath!);
+          expect(generate?.promptPath && existsSync(generate.promptPath)).toBe(false);
+
+          if (result.mode === 'immediate') {
+            expect(result.invocations).toHaveLength(1);
+          } else {
+            expect(result.invocations.map(({ argv }) => argv)).toEqual([
+              generate?.argv,
+              ['media', 'wait', `${result.runId}-task`, '--since', '1'],
+              ['media', 'wait', `${result.runId}-task`, '--since', '2'],
+            ]);
+          }
+
+          expect(result.redirects).toHaveLength(result.invocations.length);
+          for (const redirect of result.redirects) {
+            expect(redirect.stdout).not.toBe(redirect.stderr);
+            expect(redirectPaths.has(redirect.stdout)).toBe(false);
+            expect(redirectPaths.has(redirect.stderr)).toBe(false);
+            redirectPaths.add(redirect.stdout);
+            redirectPaths.add(redirect.stderr);
+            expect(existsSync(redirect.stdout)).toBe(false);
+            expect(existsSync(redirect.stderr)).toBe(false);
+            expect(existsSync(dirname(redirect.stdout))).toBe(false);
+          }
+        }
+
+        expect(readdirSync(root).some((name) => name.startsWith('od-media-'))).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
       }
-    }
-  });
-
-  it('contracts: each block uses per-invocation unique temps (no shared-file race)', () => {
-    for (const block of extractPowershellBlocks(contractsGen)) {
-      expect(block, 'block must use New-TemporaryFile for unique $out').toContain('New-TemporaryFile');
-      expect(block, 'block must clean up temp files with Remove-Item').toContain('Remove-Item');
-      expect(block, 'block must not use a fixed shared $env:TEMP path').not.toContain('$env:TEMP');
-    }
-  });
-
-  it('daemon: generate+wait loop covers both commands and handles immediate completion', () => {
-    const blocks = extractPowershellBlocks(daemonGen);
-    const loopBlock = blocks.find(
-      (b) => b.includes('$genArgs') && b.includes('$waitArgs'),
-    );
-    expect(loopBlock, 'daemon must have a block covering both generate and wait').toBeTruthy();
-    expect(loopBlock).toContain('ExitCode');
-    expect(loopBlock).toContain('taskId');
-    expect(loopBlock).toContain('nextSince');
-    expect(loopBlock).toMatch(/if\s*\(\$\w+\.nextSince\)/);
-  });
-
-  it('daemon: $wlast is initialized before while loop for immediate-completion case', () => {
-    const blocks = extractPowershellBlocks(daemonGen);
-    const loopBlock = blocks.find(
-      (b) => b.includes('$genArgs') && b.includes('$waitArgs'),
-    );
-    expect(loopBlock, 'daemon must have a generate+wait loop block').toBeTruthy();
-    // $wlast = $last must appear before while ($taskId) so the immediate path returns file JSON
-    expect(loopBlock).toMatch(/\$wlast\s*=\s*\$last[\s\S]*while\s*\(\$taskId\)/);
-  });
-
-  it('contracts: PowerShell ArgumentList uses valid escaping, not backslash-quote', () => {
-    for (const block of extractPowershellBlocks(contractsGen)) {
-      // Backslash does not escape double quotes in PowerShell; correct escape is backtick
-      expect(block, 'block must not use \\\\"-style quoting in -ArgumentList').not.toContain('\\\\"');
-    }
-  });
-
-  it('daemon: Invoke-OdMedia uses per-call unique temps; no fixed TEMP paths', () => {
-    const blocks = extractPowershellBlocks(daemonGen);
-    const fnBlock = blocks.find((b) => b.includes('function Invoke-OdMedia'));
-    expect(fnBlock, 'daemon must have an Invoke-OdMedia function block').toBeTruthy();
-    expect(fnBlock).toContain('New-TemporaryFile');
-    expect(fnBlock).not.toContain('$env:TEMP');
-  });
+    },
+  );
 });
