@@ -308,7 +308,15 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(blocks[0]).toContain('$startInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)');
     expect(blocks[0]).toContain('$p.StandardOutput.ReadToEndAsync()');
     expect(blocks[0]).toContain('$p.StandardError.ReadToEndAsync()');
-    expect(blocks[0]).toContain('[Console]::Error.Write($diagnostics)');
+    expect(blocks[0]).toContain(
+      '$diagnosticBytes = [Text.UTF8Encoding]::new($false).GetBytes($diagnostics)',
+    );
+    expect(blocks[0]).toContain('$standardError = [Console]::OpenStandardError()');
+    expect(blocks[0]).toContain(
+      '$standardError.Write($diagnosticBytes, 0, $diagnosticBytes.Length)',
+    );
+    expect(blocks[0]).toContain('$standardError.Flush()');
+    expect(blocks[0]).not.toContain('[Console]::Error.Write($diagnostics)');
     expect(blocks[0]).toContain('[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)');
     expect(blocks[0]).toContain('[Console]::Out.WriteLine($finalResult)');
     expect(blocks[0]).toContain('[Console]::OutputEncoding = $previousOutputEncoding');

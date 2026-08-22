@@ -467,7 +467,12 @@ function Invoke-OdMedia {
     $p.WaitForExit()
     $output = $outputTask.Result
     $diagnostics = $errorTask.Result
-    if ($diagnostics) { [Console]::Error.Write($diagnostics) }
+    if ($diagnostics) {
+      $diagnosticBytes = [Text.UTF8Encoding]::new($false).GetBytes($diagnostics)
+      $standardError = [Console]::OpenStandardError()
+      $standardError.Write($diagnosticBytes, 0, $diagnosticBytes.Length)
+      $standardError.Flush()
+    }
     return @{ Output = $output; ExitCode = $p.ExitCode }
   } finally {
     if ($null -ne $p) { $p.Dispose() }
