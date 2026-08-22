@@ -144,19 +144,18 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     }
   });
 
-  it('contracts: redirect-output files differ between generate and wait blocks (no shared-file race)', () => {
-    const blocks = extractPowershellBlocks(contractsGen);
-    const outGen = blocks[0].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
-    const outWait = blocks[1].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
-    expect(outGen, 'generate block must declare $out').toBeTruthy();
-    expect(outWait, 'wait block must declare $out').toBeTruthy();
-    expect(outGen).not.toBe(outWait);
+  it('contracts: each block uses per-invocation unique temps (no shared-file race)', () => {
+    for (const block of extractPowershellBlocks(contractsGen)) {
+      expect(block, 'block must use New-TemporaryFile for unique $out').toContain('New-TemporaryFile');
+      expect(block, 'block must clean up temp files with Remove-Item').toContain('Remove-Item');
+      expect(block, 'block must not use a fixed shared $env:TEMP path').not.toContain('$env:TEMP');
+    }
   });
 
   it('daemon: generate+wait loop covers both commands and handles immediate completion', () => {
     const blocks = extractPowershellBlocks(daemonGen);
     const loopBlock = blocks.find(
-      (b) => b.includes('media wait') && b.includes('media generate'),
+      (b) => b.includes('$genArgs') && b.includes('$waitArgs'),
     );
     expect(loopBlock, 'daemon must have a block covering both generate and wait').toBeTruthy();
     expect(loopBlock).toContain('ExitCode');
@@ -165,12 +164,28 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(loopBlock).toMatch(/if\s*\(\$\w+\.nextSince\)/);
   });
 
-  it('daemon: Invoke-OdMedia redirect files do not collide with standalone generate block', () => {
+  it('daemon: $wlast is initialized before while loop for immediate-completion case', () => {
     const blocks = extractPowershellBlocks(daemonGen);
-    const simpleOut = blocks[0].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
-    const functionOut = blocks[1].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
-    expect(simpleOut, 'standalone generate block must declare $out').toBeTruthy();
-    expect(functionOut, 'Invoke-OdMedia block must declare $out').toBeTruthy();
-    expect(simpleOut).not.toBe(functionOut);
+    const loopBlock = blocks.find(
+      (b) => b.includes('$genArgs') && b.includes('$waitArgs'),
+    );
+    expect(loopBlock, 'daemon must have a generate+wait loop block').toBeTruthy();
+    // $wlast = $last must appear before while ($taskId) so the immediate path returns file JSON
+    expect(loopBlock).toMatch(/\$wlast\s*=\s*\$last[\s\S]*while\s*\(\$taskId\)/);
+  });
+
+  it('contracts: PowerShell ArgumentList uses valid escaping, not backslash-quote', () => {
+    for (const block of extractPowershellBlocks(contractsGen)) {
+      // Backslash does not escape double quotes in PowerShell; correct escape is backtick
+      expect(block, 'block must not use \\\\"-style quoting in -ArgumentList').not.toContain('\\\\"');
+    }
+  });
+
+  it('daemon: Invoke-OdMedia uses per-call unique temps; no fixed TEMP paths', () => {
+    const blocks = extractPowershellBlocks(daemonGen);
+    const fnBlock = blocks.find((b) => b.includes('function Invoke-OdMedia'));
+    expect(fnBlock, 'daemon must have an Invoke-OdMedia function block').toBeTruthy();
+    expect(fnBlock).toContain('New-TemporaryFile');
+    expect(fnBlock).not.toContain('$env:TEMP');
   });
 });

@@ -103,13 +103,12 @@ Run media generation through the dispatcher:
 **Windows PowerShell only** — use \`Start-Process\` with redirection files because the \`&\` call operator loses stdout from the Electron-backed runtime:
 
 \`\`\`powershell
-$out = "$env:TEMP\\od_out.txt"
-$err = "$env:TEMP\\od_err.txt"
-Remove-Item $out,$err -ErrorAction SilentlyContinue
-$argList = "\\"$env:OD_BIN\\" media generate " +
-  "--project \\"$env:OD_PROJECT_ID\\" " +
+$out = (New-TemporaryFile).FullName
+$err = (New-TemporaryFile).FullName
+$argList = "\`"$env:OD_BIN\`" media generate " +
+  "--project \`"$env:OD_PROJECT_ID\`" " +
   "--surface <image|video|audio> --model <model-id> --output <filename> " +
-  "--prompt \\"<full prompt>\\""
+  "--prompt \`"<full prompt>\`""
 Start-Process -FilePath $env:OD_NODE_BIN \`
   -ArgumentList $argList \`
   -NoNewWindow -Wait -PassThru \`
@@ -117,6 +116,7 @@ Start-Process -FilePath $env:OD_NODE_BIN \`
   -RedirectStandardError $err
 $result = Get-Content $out -Raw  # JSON result — parse taskId or file from this
 Get-Content $err                 # diagnostics
+Remove-Item $out,$err -ErrorAction SilentlyContinue
 \`\`\`
 
 Always quote the prompt value. Never splice unquoted user text into the
@@ -145,16 +145,16 @@ For long-running renders, continue with:
 **Windows PowerShell only** — same \`Start-Process\` pattern as above:
 
 \`\`\`powershell
-$out = "$env:TEMP\\od_wait_out.txt"
-$err = "$env:TEMP\\od_wait_err.txt"
-Remove-Item $out,$err -ErrorAction SilentlyContinue
+$out = (New-TemporaryFile).FullName
+$err = (New-TemporaryFile).FullName
 Start-Process -FilePath $env:OD_NODE_BIN \`
-  -ArgumentList "\\"$env:OD_BIN\\" media wait <taskId> --since <nextSince>" \`
+  -ArgumentList "\`"$env:OD_BIN\`" media wait <taskId> --since <nextSince>" \`
   -NoNewWindow -Wait -PassThru \`
   -RedirectStandardOutput $out \`
   -RedirectStandardError $err
 $result = Get-Content $out -Raw  # JSON with nextSince and status
 Get-Content $err
+Remove-Item $out,$err -ErrorAction SilentlyContinue
 \`\`\`
 
 \`media wait\` exits \`0\` when done, \`2\` when still running, and \`5\`
