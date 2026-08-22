@@ -72,6 +72,8 @@
       "exact": [
         "apps/daemon/src/prompts/media-contract.ts",
         "apps/daemon/tests/prompts/media-contract-mirror.test.ts",
+        "apps/daemon/tests/setup.ts",
+        "apps/daemon/vitest.config.ts",
         "packages/contracts/src/prompts/media-contract.ts"
       ]
     },
@@ -173,7 +175,8 @@
     {
       "id": "workspace-manifests-and-ci",
       "match": {
-        "exact": ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".github/workflows/ci.yml", "e2e/package.json"],
+        "prefixes": [".github/actions/setup-workspace/"],
+        "exact": ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "scripts/postinstall.mjs", ".github/workflows/ci.yml", "e2e/package.json"],
         "regexes": ["^apps/[^/]+/package\\.json$", "^packages/[^/]+/package\\.json$", "^tools/[^/]+/package\\.json$"]
       },
       "effects": ["daemon_tests_required", "windows_daemon_media_contract_tests_required", "web_tests_required", "tools_dev_tests_required", "tools_pack_tests_required", "windows_tools_pack_payload_tests_required"],

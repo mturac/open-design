@@ -383,8 +383,8 @@ runner-minutes in the web, visual, and Windows jobs omitted by the planner; UI
 P0 remains the critical path.
 
 The PowerShell media-contract fixture is a separate Windows test set. Rule
-`windows-daemon-media-contract` maps the two rendered media contract sources
-and their executable mirror fixture to
+`windows-daemon-media-contract` maps the two rendered media contract sources,
+their executable mirror fixture, and its daemon test setup/configuration to
 `windows_daemon_media_contract_tests_required`. PR plans run that focused
 fixture on the Windows runner so its immediate and queued generate/wait cases
 exercise PowerShell argument transport, per-invocation redirect isolation, and

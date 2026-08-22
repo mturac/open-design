@@ -97,9 +97,31 @@ describe("workflow scope planner", () => {
         windows_tools_pack_payload_tests: true,
       },
     });
+    expect(plan("pr", [".github/actions/setup-workspace/action.yml"])).toMatchObject({
+      scopes: {
+        windows_daemon_media_contract_tests_required: true,
+        windows_tools_pack_payload_tests_required: true,
+      },
+      enabled: {
+        windows_daemon_media_contract_tests: true,
+        windows_tools_pack_payload_tests: true,
+      },
+    });
+    expect(plan("pr", ["scripts/postinstall.mjs"])).toMatchObject({
+      scopes: {
+        windows_daemon_media_contract_tests_required: true,
+        windows_tools_pack_payload_tests_required: true,
+      },
+      enabled: {
+        windows_daemon_media_contract_tests: true,
+        windows_tools_pack_payload_tests: true,
+      },
+    });
     for (const file of [
       "apps/daemon/src/prompts/media-contract.ts",
       "apps/daemon/tests/prompts/media-contract-mirror.test.ts",
+      "apps/daemon/tests/setup.ts",
+      "apps/daemon/vitest.config.ts",
       "packages/contracts/src/prompts/media-contract.ts",
     ]) {
       expect(plan("pr", [file]), file).toMatchObject({
@@ -169,10 +191,16 @@ describe("workflow scope planner", () => {
       enabled: { windows_tools_pack_payload_tests: true, workspace_unit_tests: true, e2e_vitest: false },
       trace: { escalations: [] },
     });
-    expect(plan("merge-queue", ["apps/daemon/src/prompts/media-contract.ts"])).toMatchObject({
-      enabled: { windows_daemon_media_contract_tests: true },
-      trace: { escalations: [{ reason: "below-threshold" }] },
-    });
+    for (const file of [
+      "apps/daemon/src/prompts/media-contract.ts",
+      "apps/daemon/tests/setup.ts",
+      "apps/daemon/vitest.config.ts",
+    ]) {
+      expect(plan("merge-queue", [file]), file).toMatchObject({
+        enabled: { windows_daemon_media_contract_tests: true },
+        trace: { escalations: [{ reason: "below-threshold" }] },
+      });
+    }
     const medium = plan("merge-queue", ["apps/web/src/App.tsx"]);
     expect(medium.trace.escalations).toHaveLength(1);
     expect(Object.values(medium.scopes).filter((value) => typeof value === "boolean")).not.toContain(false);
