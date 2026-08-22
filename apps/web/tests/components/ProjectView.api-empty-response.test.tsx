@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useLayoutEffect, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import { ProjectView } from '../../src/components/ProjectView';
 import { streamViaDaemon } from '../../src/providers/daemon';
 import type { DaemonStreamOptions } from '../../src/providers/daemon';
@@ -332,6 +333,7 @@ describe('ProjectView API empty response handling', () => {
 
   afterEach(() => {
     cleanup();
+    resetWorkspaceContextCache();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
   });

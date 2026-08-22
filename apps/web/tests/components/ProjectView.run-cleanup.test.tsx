@@ -3,6 +3,7 @@
 import type { ComponentProps } from 'react';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import {
   ProjectView,
   clearStreamingConversationMarker,
@@ -501,6 +502,7 @@ describe('ProjectView daemon cleanup', () => {
 
   afterEach(() => {
     cleanup();
+    resetWorkspaceContextCache();
     vi.clearAllMocks();
     vi.useRealTimers();
     globalThis.fetch = originalFetch;
