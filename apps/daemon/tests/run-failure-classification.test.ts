@@ -1750,6 +1750,75 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     expect(result?.failure_detail).toBe('hard_quota');
     expect(result?.retryable).toBe(false);
   });
+
+  // Blocking point 1: rpc_close_reason=empty_output must NOT outrank a
+  // structured RATE_LIMITED error code.  The child exits cleanly after the
+  // provider rejects the request with a rate-limit, and the daemon stamps
+  // rpc_close_reason=empty_output — but RATE_LIMITED is the authoritative
+  // signal and must win.
+  it('classifies RATE_LIMITED + rpc_close_reason=empty_output as rate_limit, not empty_output', () => {
+    const result = classify(
+      'RATE_LIMITED',
+      'HTTP 429: too many requests',
+      [
+        errorEvent('RATE_LIMITED', 'HTTP 429: too many requests', true),
+        runtimeCloseEvent('empty_output'),
+      ],
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('rate_limit_429');
+    expect(result?.retryable).toBe(true);
+  });
+
+  // Blocking point 1: hard quota text + rpc_close_reason=empty_output — the
+  // quota exhaustion text must win over the empty_output close reason.
+  it('classifies hard quota text + rpc_close_reason=empty_output as hard_quota, not empty_output', () => {
+    const result = classifyForAgent(
+      'byok-opencode',
+      'RATE_LIMITED',
+      'You have exceeded your current quota. Please check your plan and billing details.',
+      [
+        errorEvent('RATE_LIMITED', 'You have exceeded your current quota. Please check your plan and billing details.', false),
+        runtimeCloseEvent('empty_output'),
+      ],
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('hard_quota');
+    expect(result?.retryable).toBe(false);
+  });
+
+  // Blocking point 1: upstream failure + rpc_close_reason=empty_output — the
+  // upstream signal must win over the empty_output close reason.
+  it('classifies UPSTREAM_UNAVAILABLE + rpc_close_reason=empty_output as upstream_unavailable, not empty_output', () => {
+    const result = classify(
+      'UPSTREAM_UNAVAILABLE',
+      'HTTP 503 upstream unavailable',
+      [
+        errorEvent('UPSTREAM_UNAVAILABLE', 'HTTP 503 upstream unavailable', true),
+        runtimeCloseEvent('empty_output'),
+      ],
+    );
+    expect(result?.failure_category).toBe('upstream_unavailable');
+    expect(result?.failure_detail).toBe('upstream_5xx');
+    expect(result?.retryable).toBe(true);
+  });
+
+  // Blocking point 2: the bare \bquota\b word is intentionally absent from
+  // isHardQuotaText so advisory phrases like "checking quota" in the daemon's
+  // own empty-output fallback message do not match — confirmed by the existing
+  // advisory-quota test above.  This test pins the specific exhaustion phrase
+  // "exceeded your current quota" that MUST still match even without the bare
+  // \bquota\b term in the pattern.
+  it('still matches "exceeded your current quota" as hard_quota without bare \\bquota\\b in the pattern', () => {
+    // No rpc_close_reason=empty_output — goes through the text-heuristic path.
+    const result = classify(
+      'RATE_LIMITED',
+      'API error: you have exceeded your current quota for this billing period.',
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('hard_quota');
+    expect(result?.retryable).toBe(false);
+  });
 });
 
 // The agent binary being absent at its resolved path also leaks into the opaque

@@ -853,21 +853,6 @@ function classifyRunFailureBase(
     );
   }
 
-  // Prefer the structured rpc_close_reason=empty_output signal over text
-  // heuristics. The daemon's generic empty-output fallback message contains
-  // advisory phrases (e.g. "checking quota") that otherwise match
-  // isHardQuotaText and reclassify a retryable empty_output run as a
-  // non-retryable hard quota exhaustion.
-  if (runtimeCloseReason === 'empty_output') {
-    return classification(
-      'empty_output',
-      'empty_output',
-      inferFailureStageFromEvents(events, 'first_token_wait'),
-      retryableHint ?? true,
-      'retry',
-    );
-  }
-
   if (errorCode === 'RATE_LIMITED' || serviceFailure === 'RATE_LIMITED' || isHardQuotaText(text) || isRateLimitText(text)) {
     // Checked BEFORE the hard-quota reading: vela phrases its rolling per-model
     // window as "…usage limit…", which `isHardQuotaText` matches, so without
@@ -917,6 +902,22 @@ function classifyRunFailureBase(
       inferFailureStageFromEvents(events, 'first_token_wait'),
       retryable,
       retryable ? 'retry' : 'none',
+    );
+  }
+
+  // Prefer the structured rpc_close_reason=empty_output signal over text
+  // heuristics — but only after RATE_LIMITED, UPSTREAM_UNAVAILABLE, and other
+  // structured-code branches above have had a chance to claim the run. A child
+  // that exits cleanly after a provider rate-limit rejection may still carry
+  // rpc_close_reason=empty_output; the structured error code is the authoritative
+  // signal in that case, not the close reason.
+  if (runtimeCloseReason === 'empty_output') {
+    return classification(
+      'empty_output',
+      'empty_output',
+      inferFailureStageFromEvents(events, 'first_token_wait'),
+      retryableHint ?? true,
+      'retry',
     );
   }
 
