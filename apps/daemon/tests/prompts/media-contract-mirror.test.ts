@@ -137,6 +137,8 @@ const prompt = [
   ),
 ].join('\n');
 const projectId = 'project with "quoted" spaces and trailing\\';
+const outputFileName = 'résumé-東京.png';
+const diagnosticMarker = 'progress café 東京';
 
 const stubSource = String.raw`
 const fs = require('node:fs');
@@ -157,13 +159,15 @@ const delayUntil = Date.now() + 150;
 while (Date.now() < delayUntil) {
   // Keep redirected streams open long enough for concurrent fixture runs to overlap.
 }
+process.stdout.write('s'.repeat(80 * 1024) + '\n');
+process.stderr.write('progress café 東京 ' + 'e'.repeat(80 * 1024) + '\n');
 
 if (args[0] !== 'media') {
   process.stderr.write('expected media command\n');
   process.exitCode = 9;
 } else if (args[1] === 'generate') {
   if (process.env.OD_STUB_MODE === 'immediate') {
-    process.stdout.write(JSON.stringify({ file: { name: 'output.png', kind: 'image' } }) + '\n');
+    process.stdout.write(JSON.stringify({ file: { name: 'résumé-東京.png', kind: 'image' } }) + '\n');
   } else {
     process.stdout.write(JSON.stringify({ taskId: process.env.OD_STUB_RUN_ID + '-task', nextSince: 1 }) + '\n');
   }
@@ -175,7 +179,7 @@ if (args[0] !== 'media') {
     process.stdout.write(JSON.stringify({ taskId: args[2], status: 'running', nextSince: 2 }) + '\n');
     process.exitCode = 2;
   } else {
-    process.stdout.write(JSON.stringify({ file: { name: 'output.png', kind: 'image' } }) + '\n');
+    process.stdout.write(JSON.stringify({ file: { name: 'résumé-東京.png', kind: 'image' } }) + '\n');
   }
 } else {
   process.stderr.write('unexpected media subcommand\n');
@@ -300,6 +304,8 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(blocks[0]).toContain('$startInfo.Arguments = $arguments');
     expect(blocks[0]).toContain('$startInfo.RedirectStandardOutput = $true');
     expect(blocks[0]).toContain('$startInfo.RedirectStandardError = $true');
+    expect(blocks[0]).toContain('$startInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)');
+    expect(blocks[0]).toContain('$startInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)');
     expect(blocks[0]).toContain('$p.StandardOutput.ReadToEndAsync()');
     expect(blocks[0]).toContain('$p.StandardError.ReadToEndAsync()');
     expect(blocks[0]).toContain('[Console]::Error.Write($diagnostics)');
@@ -343,7 +349,9 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
         for (const result of results) {
           const context =
             `${result.powerShell}/${result.contract}/${result.mode}: ` +
-            `stdout=${JSON.stringify(result.stdout)}, stderr=${JSON.stringify(result.stderr)}`;
+            `stdout=${JSON.stringify(result.stdout)}, ` +
+            `stderrPrefix=${JSON.stringify(result.stderr.slice(0, 256))}, ` +
+            `stderrLength=${result.stderr.length}`;
           expect(result.status, context).toBe(0);
           expect(result.stdout.trim(), context).not.toBe('');
           let finalResult: unknown;
@@ -353,9 +361,18 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
             throw new Error(`${context}: ${String(error)}`);
           }
           expect(finalResult, context).toEqual({
-            file: { name: 'output.png', kind: 'image' },
+            file: { name: outputFileName, kind: 'image' },
           });
-          expect(result.stderr.trim().split(/\r?\n/)).toEqual(
+          expect(result.stderr, context).toContain(diagnosticMarker);
+          expect(Buffer.byteLength(result.stderr, 'utf8'), context).toBeGreaterThan(
+            64 * 1024 * result.invocations.length,
+          );
+          expect(
+            result.stderr
+              .trim()
+              .split(/\r?\n/)
+              .filter((line) => line.startsWith(`${result.runId}:`)),
+          ).toEqual(
             result.mode === 'immediate'
               ? [`${result.runId}:generate`]
               : [

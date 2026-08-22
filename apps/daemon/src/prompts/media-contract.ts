@@ -457,6 +457,8 @@ function Invoke-OdMedia {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $startInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $startInfo
     [void]$p.Start()
