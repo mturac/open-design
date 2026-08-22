@@ -1819,6 +1819,62 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     expect(result?.failure_detail).toBe('hard_quota');
     expect(result?.retryable).toBe(false);
   });
+
+  // Refs mrcfps blocking comment on PR #7248.  Antigravity emits:
+  //   RESOURCE_EXHAUSTED (code 429): Individual quota reached. Contact your
+  //   administrator to enable overages. Resets in <H>h<M>m<S>s.
+  // to its log file.  The tightened pattern must recognise both `quota reached`
+  // and the bare `RESOURCE_EXHAUSTED` status code as hard quota exhaustion.
+  it('classifies Antigravity "RESOURCE_EXHAUSTED: Individual quota reached" as hard_quota', () => {
+    const result = classify(
+      'RATE_LIMITED',
+      'RESOURCE_EXHAUSTED (code 429): Individual quota reached. Contact your administrator to enable overages. Resets in 3h22m10s.',
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('hard_quota');
+    expect(result?.retryable).toBe(false);
+  });
+
+  it('classifies bare "Individual quota reached" as hard_quota', () => {
+    const result = classify(
+      'RATE_LIMITED',
+      'Individual quota reached.',
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('hard_quota');
+    expect(result?.retryable).toBe(false);
+  });
+
+  it('classifies bare RESOURCE_EXHAUSTED status code as hard_quota', () => {
+    // Antigravity log may surface the status code alone when the message is
+    // stripped by the log parser.
+    const result = classify(
+      'RATE_LIMITED',
+      'RESOURCE_EXHAUSTED',
+    );
+    expect(result?.failure_category).toBe('rate_limit');
+    expect(result?.failure_detail).toBe('hard_quota');
+    expect(result?.retryable).toBe(false);
+  });
+
+  // Advisory phrases from antigravityQuotaGuidance() — these are in the
+  // user-facing guidance string, not in any upstream error, and must NOT
+  // trigger hard_quota classification.
+  it('does not classify "has its own quota" advisory phrase as hard_quota', () => {
+    const result = classify(
+      'AGENT_EXECUTION_FAILED',
+      'Each Antigravity model (Gemini 3 Pro / Flash, Claude 4.6, GPT-OSS) has its own quota.',
+    );
+    expect(result?.failure_detail).not.toBe('hard_quota');
+  });
+
+  it('does not classify "available quota" advisory phrase as hard_quota', () => {
+    const result = classify(
+      'AGENT_EXECUTION_FAILED',
+      'Switch Model picker to pick a model with available quota, then retry here.',
+    );
+    expect(result?.failure_detail).not.toBe('hard_quota');
+  });
 });
 
 // The agent binary being absent at its resolved path also leaks into the opaque

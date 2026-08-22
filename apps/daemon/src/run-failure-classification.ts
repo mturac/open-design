@@ -176,7 +176,13 @@ function isHardQuotaText(text: string): boolean {
   // otherwise match, misclassifying a retryable empty_output run as a
   // non-retryable hard quota exhaustion.  Specific exhaustion phrases are
   // listed below instead.
-  return /\b(session limit|usage limit|limit reached|quota exceeded|exceeded your current quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|用户额度不足|额度不足|预扣费额度失败/i
+  //
+  // `quota reached` covers Antigravity's upstream log line:
+  //   RESOURCE_EXHAUSTED (code 429): Individual quota reached.
+  // `RESOURCE_EXHAUSTED` catches the same log when the phrase portion is
+  // truncated or arrives separately — it is the gRPC status code that
+  // Antigravity uses exclusively for per-model quota exhaustion.
+  return /\b(session limit|usage limit|limit reached|quota exceeded|quota reached|exceeded your current quota|billing (?:hard )?limit|insufficient[ _-]?(?:quota|credit|credits|funds)|out of credits|no payment method|requires more credits|can only afford)\b|DAILY_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED|用户额度不足|额度不足|预扣费额度失败/i
     .test(text);
 }
 
