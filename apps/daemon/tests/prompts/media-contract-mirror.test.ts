@@ -90,15 +90,87 @@ describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
   });
 });
 
+/**
+ * Extract raw content of every ```powershell … ``` fence from a contract body.
+ *
+ * In the raw template-literal body returned by generationContractBody() the
+ * backtick character is escaped as \`, so code fences appear as \`\`\`powershell
+ * rather than the three plain backticks you see in the rendered text.
+ */
+function extractPowershellBlocks(contractBody: string): string[] {
+  const re = /\\\`\\\`\\\`powershell\n([\s\S]*?)\\\`\\\`\\\`/g;
+  const blocks: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(contractBody)) !== null) blocks.push(m[1]);
+  return blocks;
+}
+
 describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
   const contractsGen = generationContractBody(
     '../../../../packages/contracts/src/prompts/media-contract.ts',
   );
+  const daemonGen = generationContractBody('../../src/prompts/media-contract.ts');
 
   it('warns against the & call operator on Windows PowerShell', () => {
     expect(contractsGen).toContain('Windows PowerShell');
     expect(contractsGen).toContain('Start-Process');
     expect(contractsGen).toContain('-RedirectStandardOutput');
     expect(contractsGen).toContain('-RedirectStandardError');
+  });
+
+  it('contracts: exposes two powershell blocks — one for generate, one for wait', () => {
+    const blocks = extractPowershellBlocks(contractsGen);
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    expect(blocks[0]).toContain('media generate');
+    expect(blocks[1]).toContain('media wait');
+  });
+
+  it('contracts: each powershell block contains a structurally complete Start-Process call', () => {
+    const required = [
+      'Start-Process',
+      '-FilePath $env:OD_NODE_BIN',
+      '-ArgumentList',
+      '-NoNewWindow',
+      '-Wait',
+      '-PassThru',
+      '-RedirectStandardOutput',
+      '-RedirectStandardError',
+      'Get-Content',
+    ] as const;
+    for (const block of extractPowershellBlocks(contractsGen)) {
+      for (const flag of required) {
+        expect(block, `flag "${flag}" missing from block`).toContain(flag);
+      }
+    }
+  });
+
+  it('contracts: redirect-output files differ between generate and wait blocks (no shared-file race)', () => {
+    const blocks = extractPowershellBlocks(contractsGen);
+    const outGen = blocks[0].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
+    const outWait = blocks[1].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
+    expect(outGen, 'generate block must declare $out').toBeTruthy();
+    expect(outWait, 'wait block must declare $out').toBeTruthy();
+    expect(outGen).not.toBe(outWait);
+  });
+
+  it('daemon: generate+wait loop covers both commands and handles immediate completion', () => {
+    const blocks = extractPowershellBlocks(daemonGen);
+    const loopBlock = blocks.find(
+      (b) => b.includes('media wait') && b.includes('media generate'),
+    );
+    expect(loopBlock, 'daemon must have a block covering both generate and wait').toBeTruthy();
+    expect(loopBlock).toContain('ExitCode');
+    expect(loopBlock).toContain('taskId');
+    expect(loopBlock).toContain('nextSince');
+    expect(loopBlock).toMatch(/if\s*\(\$\w+\.nextSince\)/);
+  });
+
+  it('daemon: Invoke-OdMedia redirect files do not collide with standalone generate block', () => {
+    const blocks = extractPowershellBlocks(daemonGen);
+    const simpleOut = blocks[0].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
+    const functionOut = blocks[1].match(/\$out\s*=\s*"([^"]+)"/)?.[1];
+    expect(simpleOut, 'standalone generate block must declare $out').toBeTruthy();
+    expect(functionOut, 'Invoke-OdMedia block must declare $out').toBeTruthy();
+    expect(simpleOut).not.toBe(functionOut);
   });
 });
