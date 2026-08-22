@@ -443,6 +443,8 @@ function Invoke-OdMedia {
   [void](New-Item -ItemType Directory -Path $tempDirectory -ErrorAction Stop)
   $out = Join-Path $tempDirectory "stdout.txt"
   $err = Join-Path $tempDirectory "stderr.txt"
+  $redirectOut = [System.Management.Automation.WildcardPattern]::Escape($out)
+  $redirectErr = [System.Management.Automation.WildcardPattern]::Escape($err)
   try {
     if ($PSBoundParameters.ContainsKey("Prompt")) {
       $promptFile = Join-Path $tempDirectory "prompt.txt"
@@ -453,8 +455,8 @@ function Invoke-OdMedia {
     $p = Start-Process -FilePath $env:OD_NODE_BIN \`
       -ArgumentList $arguments \`
       -NoNewWindow -Wait -PassThru \`
-      -RedirectStandardOutput $out \`
-      -RedirectStandardError $err
+      -RedirectStandardOutput $redirectOut \`
+      -RedirectStandardError $redirectErr
     $output = Get-Content -LiteralPath $out -Raw
     Get-Content -LiteralPath $err | Write-Host  # stream diagnostics
     return @{ Output = $output; ExitCode = $p.ExitCode }

@@ -111,10 +111,10 @@ function workflowBlock(contract: string): string {
   return block;
 }
 
-function findWindowsPowerShell(): string | undefined {
-  if (process.platform !== 'win32') return undefined;
+function findWindowsPowerShellExecutables(): string[] {
+  if (process.platform !== 'win32') return [];
   const candidates = ['powershell.exe', 'pwsh.exe'];
-  return candidates.find((candidate) => {
+  return candidates.filter((candidate) => {
     const probe = spawnSync(candidate, [
       '-NoLogo',
       '-NoProfile',
@@ -126,7 +126,7 @@ function findWindowsPowerShell(): string | undefined {
   });
 }
 
-const powerShell = findWindowsPowerShell();
+const powerShellExecutables = findWindowsPowerShellExecutables();
 const prompt = [
   'Warm "studio" portrait with soft window light and deliberate negative space.',
   'Keep this multiline text intact: café, 東京, $literal, `backtick`, & | < > ; ().',
@@ -195,6 +195,7 @@ interface RedirectTrace {
 
 interface PowerShellResult {
   contract: string;
+  powerShell: string;
   mode: 'immediate' | 'queued';
   runId: string;
   status: number | null;
@@ -241,13 +242,13 @@ $redirectJson = ConvertTo-Json -Compress -InputObject @($script:OdRedirectTrace)
 function executePowerShellExample(options: {
   contract: string;
   block: string;
+  powerShell: string;
   mode: 'immediate' | 'queued';
   root: string;
   runtimePath: string;
   stubPath: string;
   runId: string;
 }): Promise<PowerShellResult> {
-  if (!powerShell) throw new Error('PowerShell executable is unavailable');
   const scriptPath = join(options.root, `${options.runId}.ps1`);
   const logPath = join(options.root, `${options.runId}.ndjson`);
   const redirectLogPath = join(options.root, `${options.runId}-redirects.json`);
@@ -255,7 +256,7 @@ function executePowerShellExample(options: {
 
   return new Promise((resolve, reject) => {
     const child = spawn(
-      powerShell,
+      options.powerShell,
       [
         '-NoLogo',
         '-NoProfile',
@@ -307,6 +308,7 @@ function executePowerShellExample(options: {
         : [];
       resolve({
         contract: options.contract,
+        powerShell: options.powerShell,
         mode: options.mode,
         runId: options.runId,
         status,
@@ -331,6 +333,14 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(blocks[0]).toContain('$PSBoundParameters.ContainsKey("Prompt")');
     expect(blocks[0]).not.toContain('$null -ne $Prompt');
     expect(blocks[0]).toContain('[guid]::NewGuid()');
+    expect(blocks[0]).toContain(
+      '$redirectOut = [System.Management.Automation.WildcardPattern]::Escape($out)',
+    );
+    expect(blocks[0]).toContain(
+      '$redirectErr = [System.Management.Automation.WildcardPattern]::Escape($err)',
+    );
+    expect(blocks[0]).toContain('-RedirectStandardOutput $redirectOut');
+    expect(blocks[0]).toContain('-RedirectStandardError $redirectErr');
     expect(blocks[0]).toMatch(/try \{[\s\S]*finally \{/);
     for (const block of blocks) {
       expect(instrumentedScript(block)).toContain('$prompt = $env:OD_TEST_PROMPT');
@@ -338,8 +348,9 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
   });
 
   it.skipIf(process.platform !== 'win32')(
-    'executes immediate and queued workflows concurrently without argv loss or redirect collisions',
+    'executes immediate and queued workflows in each available Windows PowerShell runtime',
     async () => {
+      expect(powerShellExecutables).toContain('powershell.exe');
       const root = mkdtempSync(join(tmpdir(), 'open design [media] contract '));
       const runtimePath = join(root, 'stub node runtime with spaces.exe');
       const stubPath = join(root, 'stub runtime with spaces.cjs');
@@ -347,23 +358,29 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
       if (process.platform !== 'win32') chmodSync(runtimePath, 0o755);
       writeFileSync(stubPath, stubSource, 'utf8');
       try {
-        const runs = renderedContracts.flatMap(({ name, body }) =>
-          (['immediate', 'queued'] as const).map((mode) => ({
-            contract: name,
-            block: workflowBlock(body),
-            mode,
-            root,
-            runtimePath,
-            stubPath,
-            runId: `${name.toLowerCase()}-${mode}`,
-          })),
+        const runs = powerShellExecutables.flatMap((powerShell) =>
+          renderedContracts.flatMap(({ name, body }) =>
+            (['immediate', 'queued'] as const).map((mode) => ({
+              contract: name,
+              block: workflowBlock(body),
+              powerShell,
+              mode,
+              root,
+              runtimePath,
+              stubPath,
+              runId: `${powerShell === 'powershell.exe' ? 'windows-powershell' : 'pwsh'}-${name.toLowerCase()}-${mode}`,
+            })),
+          ),
         );
         const results = await Promise.all(runs.map(executePowerShellExample));
         const promptPaths = new Set<string>();
         const redirectPaths = new Set<string>();
 
         for (const result of results) {
-          expect(result.status, `${result.contract}/${result.mode}: ${result.stderr}`).toBe(0);
+          expect(
+            result.status,
+            `${result.powerShell}/${result.contract}/${result.mode}: ${result.stderr}`,
+          ).toBe(0);
           expect(JSON.parse(result.stdout.trim())).toEqual({
             file: { name: 'output.png', kind: 'image' },
           });
@@ -388,6 +405,7 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
           expect(promptPaths.has(generate!.promptPath!)).toBe(false);
           promptPaths.add(generate!.promptPath!);
           expect(generate?.promptPath && existsSync(generate.promptPath)).toBe(false);
+          expect(generate?.promptPath && existsSync(dirname(generate.promptPath))).toBe(false);
 
           if (result.mode === 'immediate') {
             expect(result.invocations).toHaveLength(1);
@@ -402,13 +420,12 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
           expect(result.redirects).toHaveLength(result.invocations.length);
           for (const redirect of result.redirects) {
             expect(redirect.stdout).not.toBe(redirect.stderr);
+            expect(redirect.stdout).toContain('`[media`]');
+            expect(redirect.stderr).toContain('`[media`]');
             expect(redirectPaths.has(redirect.stdout)).toBe(false);
             expect(redirectPaths.has(redirect.stderr)).toBe(false);
             redirectPaths.add(redirect.stdout);
             redirectPaths.add(redirect.stderr);
-            expect(existsSync(redirect.stdout)).toBe(false);
-            expect(existsSync(redirect.stderr)).toBe(false);
-            expect(existsSync(dirname(redirect.stdout))).toBe(false);
           }
         }
 
