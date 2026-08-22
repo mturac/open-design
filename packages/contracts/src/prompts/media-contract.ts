@@ -74,7 +74,7 @@ write image/video/audio bytes by hand. Always call out to the dispatcher.
 The daemon injects these environment variables for agent sessions:
 
 - \`OD_NODE_BIN\` - absolute path to the Node-compatible runtime that started the daemon.
-- \`OD_BIN\` - absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" ...\`. **On Windows PowerShell do NOT use \`& $env:OD_NODE_BIN $env:OD_BIN ...\`** — that call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable. Use \`Start-Process\` with \`-RedirectStandardOutput\` and \`-RedirectStandardError\` instead (see PowerShell block below).
+- \`OD_BIN\` - absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" ...\`. **On Windows PowerShell do NOT use \`& $env:OD_NODE_BIN $env:OD_BIN ...\`** — that call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable. Use the \`System.Diagnostics.Process\` helper below instead.
 - \`OD_PROJECT_ID\` - active project id. Pass it as \`--project "$OD_PROJECT_ID"\`.
 - \`OD_PROJECT_DIR\` - active project files directory.
 - \`OD_DAEMON_URL\` - base URL of the local daemon.
@@ -100,8 +100,8 @@ Run media generation through the dispatcher:
   [--language <lang>]
 \`\`\`
 
-**Windows PowerShell only** — use the complete \`Start-Process\` generate/wait
-helper below because the \`&\` call operator loses stdout from the
+**Windows PowerShell only** — use the complete \`System.Diagnostics.Process\`
+generate/wait helper below because the \`&\` call operator loses stdout from the
 Electron-backed runtime. The helper also handles immediate completion.
 
 Always quote the prompt value. Never splice unquoted user text into the
@@ -127,9 +127,9 @@ For long-running renders, continue with:
 "$OD_NODE_BIN" "$OD_BIN" media wait <taskId> --since <nextSince>
 \`\`\`
 
-**Windows PowerShell only** — preserve argument boundaries, redirect each
-invocation through its own temporary directory, and remove temporary files even
-when the command fails:
+**Windows PowerShell only** — preserve argument boundaries, redirect both process
+streams, and remove each invocation's temporary prompt files even when the command
+fails:
 
 \`\`\`powershell
 function ConvertTo-OdProcessArgument {
@@ -148,10 +148,7 @@ function Invoke-OdMedia {
   )
   $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ("od-media-" + [guid]::NewGuid().ToString("N"))
   [void](New-Item -ItemType Directory -Path $tempDirectory -ErrorAction Stop)
-  $out = Join-Path $tempDirectory "stdout.txt"
-  $err = Join-Path $tempDirectory "stderr.txt"
-  $redirectOut = [System.Management.Automation.WildcardPattern]::Escape($out)
-  $redirectErr = [System.Management.Automation.WildcardPattern]::Escape($err)
+  $p = $null
   try {
     if ($PSBoundParameters.ContainsKey("Prompt")) {
       $promptFile = Join-Path $tempDirectory "prompt.txt"
@@ -159,15 +156,25 @@ function Invoke-OdMedia {
       $ArgList += @("--prompt-file", $promptFile)
     }
     $arguments = ($ArgList | ForEach-Object { ConvertTo-OdProcessArgument $_ }) -join ' '
-    $p = Start-Process -FilePath $env:OD_NODE_BIN \`
-      -ArgumentList $arguments \`
-      -NoNewWindow -Wait -PassThru \`
-      -RedirectStandardOutput $redirectOut \`
-      -RedirectStandardError $redirectErr
-    $output = Get-Content -LiteralPath $out -Raw
-    Get-Content -LiteralPath $err | Write-Host  # stream diagnostics
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $env:OD_NODE_BIN
+    $startInfo.Arguments = $arguments
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $startInfo
+    [void]$p.Start()
+    $outputTask = $p.StandardOutput.ReadToEndAsync()
+    $errorTask = $p.StandardError.ReadToEndAsync()
+    $p.WaitForExit()
+    $output = $outputTask.Result
+    $diagnostics = $errorTask.Result
+    if ($diagnostics) { [Console]::Error.Write($diagnostics) }
     return @{ Output = $output; ExitCode = $p.ExitCode }
   } finally {
+    if ($null -ne $p) { $p.Dispose() }
     Remove-Item -LiteralPath $tempDirectory -Recurse -Force -ErrorAction SilentlyContinue
   }
 }

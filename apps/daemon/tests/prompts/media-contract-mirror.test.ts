@@ -82,7 +82,7 @@ describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
     expect(daemonBody).not.toContain('图片生成服务暂时不可用');
   });
 
-  it('carries the Windows PowerShell Start-Process invocation for media generate and media wait', () => {
+  it('carries the Windows PowerShell process invocation for media generate and media wait', () => {
     expect(contractsBody).not.toContain('& $env:OD_NODE_BIN $env:OD_BIN media generate');
   });
 });
@@ -151,10 +151,11 @@ const entry = {
   prompt: promptPath ? fs.readFileSync(promptPath, 'utf8') : undefined,
 };
 fs.appendFileSync(process.env.OD_STUB_LOG, JSON.stringify(entry) + '\n');
+process.stderr.write(process.env.OD_STUB_RUN_ID + ':' + args[1] + '\n');
 
 const delayUntil = Date.now() + 150;
 while (Date.now() < delayUntil) {
-  // Keep redirect handles open long enough for concurrent fixture runs to overlap.
+  // Keep redirected streams open long enough for concurrent fixture runs to overlap.
 }
 
 if (args[0] !== 'media') {
@@ -188,11 +189,6 @@ interface StubInvocation {
   prompt?: string;
 }
 
-interface RedirectTrace {
-  stdout: string;
-  stderr: string;
-}
-
 interface PowerShellResult {
   contract: string;
   powerShell: string;
@@ -202,7 +198,6 @@ interface PowerShellResult {
   stdout: string;
   stderr: string;
   invocations: StubInvocation[];
-  redirects: RedirectTrace[];
 }
 
 function instrumentedScript(block: string): string {
@@ -212,31 +207,7 @@ function instrumentedScript(block: string): string {
   );
   if (executableBlock === block) throw new Error('prompt placeholder not found');
 
-  return `
-$script:OdRedirectTrace = @()
-function Start-Process {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true)][string]$FilePath,
-    [string]$ArgumentList,
-    [switch]$NoNewWindow,
-    [switch]$Wait,
-    [switch]$PassThru,
-    [string]$RedirectStandardOutput,
-    [string]$RedirectStandardError
-  )
-  $script:OdRedirectTrace += [pscustomobject]@{
-    stdout = $RedirectStandardOutput
-    stderr = $RedirectStandardError
-  }
-  Microsoft.PowerShell.Management\\Start-Process @PSBoundParameters
-}
-
-${executableBlock}
-
-$redirectJson = ConvertTo-Json -Compress -InputObject @($script:OdRedirectTrace)
-[IO.File]::WriteAllText($env:OD_TEST_REDIRECT_LOG, $redirectJson)
-`;
+  return executableBlock;
 }
 
 function executePowerShellExample(options: {
@@ -251,7 +222,6 @@ function executePowerShellExample(options: {
 }): Promise<PowerShellResult> {
   const scriptPath = join(options.root, `${options.runId}.ps1`);
   const logPath = join(options.root, `${options.runId}.ndjson`);
-  const redirectLogPath = join(options.root, `${options.runId}-redirects.json`);
   writeFileSync(scriptPath, instrumentedScript(options.block), 'utf8');
 
   return new Promise((resolve, reject) => {
@@ -279,7 +249,6 @@ function executePowerShellExample(options: {
           OD_STUB_RUN_ID: options.runId,
           OD_STUB_LOG: logPath,
           OD_STUB_STATE_DIR: options.root,
-          OD_TEST_REDIRECT_LOG: redirectLogPath,
         },
         windowsHide: true,
       },
@@ -303,9 +272,6 @@ function executePowerShellExample(options: {
             .filter(Boolean)
             .map((line) => JSON.parse(line) as StubInvocation)
         : [];
-      const redirects = existsSync(redirectLogPath)
-        ? (JSON.parse(readFileSync(redirectLogPath, 'utf8')) as RedirectTrace[])
-        : [];
       resolve({
         contract: options.contract,
         powerShell: options.powerShell,
@@ -315,7 +281,6 @@ function executePowerShellExample(options: {
         stdout,
         stderr,
         invocations,
-        redirects,
       });
     });
   });
@@ -328,19 +293,19 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(blocks[0]).toBe(blocks[1]);
     expect(blocks[0]).toContain('--prompt-file');
     expect(blocks[0]).toContain('ConvertTo-OdProcessArgument');
-    expect(blocks[0]).toContain('-ArgumentList $arguments');
-    expect(blocks[0]).not.toContain('-ArgumentList $ArgList');
     expect(blocks[0]).toContain('$PSBoundParameters.ContainsKey("Prompt")');
     expect(blocks[0]).not.toContain('$null -ne $Prompt');
     expect(blocks[0]).toContain('[guid]::NewGuid()');
-    expect(blocks[0]).toContain(
-      '$redirectOut = [System.Management.Automation.WildcardPattern]::Escape($out)',
-    );
-    expect(blocks[0]).toContain(
-      '$redirectErr = [System.Management.Automation.WildcardPattern]::Escape($err)',
-    );
-    expect(blocks[0]).toContain('-RedirectStandardOutput $redirectOut');
-    expect(blocks[0]).toContain('-RedirectStandardError $redirectErr');
+    expect(blocks[0]).toContain('New-Object System.Diagnostics.ProcessStartInfo');
+    expect(blocks[0]).toContain('$startInfo.Arguments = $arguments');
+    expect(blocks[0]).toContain('$startInfo.RedirectStandardOutput = $true');
+    expect(blocks[0]).toContain('$startInfo.RedirectStandardError = $true');
+    expect(blocks[0]).toContain('$p.StandardOutput.ReadToEndAsync()');
+    expect(blocks[0]).toContain('$p.StandardError.ReadToEndAsync()');
+    expect(blocks[0]).toContain('[Console]::Error.Write($diagnostics)');
+    expect(blocks[0]).toContain('$p.WaitForExit()');
+    expect(blocks[0]).toContain('$p.Dispose()');
+    expect(blocks[0]).not.toContain('Start-Process');
     expect(blocks[0]).toMatch(/try \{[\s\S]*finally \{/);
     for (const block of blocks) {
       expect(instrumentedScript(block)).toContain('$prompt = $env:OD_TEST_PROMPT');
@@ -374,16 +339,31 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
         );
         const results = await Promise.all(runs.map(executePowerShellExample));
         const promptPaths = new Set<string>();
-        const redirectPaths = new Set<string>();
 
         for (const result of results) {
-          expect(
-            result.status,
-            `${result.powerShell}/${result.contract}/${result.mode}: ${result.stderr}`,
-          ).toBe(0);
-          expect(JSON.parse(result.stdout.trim())).toEqual({
+          const context =
+            `${result.powerShell}/${result.contract}/${result.mode}: ` +
+            `stdout=${JSON.stringify(result.stdout)}, stderr=${JSON.stringify(result.stderr)}`;
+          expect(result.status, context).toBe(0);
+          expect(result.stdout.trim(), context).not.toBe('');
+          let finalResult: unknown;
+          try {
+            finalResult = JSON.parse(result.stdout.trim());
+          } catch (error) {
+            throw new Error(`${context}: ${String(error)}`);
+          }
+          expect(finalResult, context).toEqual({
             file: { name: 'output.png', kind: 'image' },
           });
+          expect(result.stderr.trim().split(/\r?\n/)).toEqual(
+            result.mode === 'immediate'
+              ? [`${result.runId}:generate`]
+              : [
+                  `${result.runId}:generate`,
+                  `${result.runId}:wait`,
+                  `${result.runId}:wait`,
+                ],
+          );
 
           const generate = result.invocations[0];
           expect(generate?.argv).toEqual([
@@ -415,17 +395,6 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
               ['media', 'wait', `${result.runId}-task`, '--since', '1'],
               ['media', 'wait', `${result.runId}-task`, '--since', '2'],
             ]);
-          }
-
-          expect(result.redirects).toHaveLength(result.invocations.length);
-          for (const redirect of result.redirects) {
-            expect(redirect.stdout).not.toBe(redirect.stderr);
-            expect(redirect.stdout).toContain('`[media`]');
-            expect(redirect.stderr).toContain('`[media`]');
-            expect(redirectPaths.has(redirect.stdout)).toBe(false);
-            expect(redirectPaths.has(redirect.stderr)).toBe(false);
-            redirectPaths.add(redirect.stdout);
-            redirectPaths.add(redirect.stderr);
           }
         }
 

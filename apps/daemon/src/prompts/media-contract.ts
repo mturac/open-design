@@ -214,7 +214,7 @@ prompt and the narration.
 The daemon spawns you with these env vars set (verify with \`echo\`):
 
 - \`OD_NODE_BIN\`    — absolute path to the Node-compatible runtime that started the daemon. Packaged desktop installs provide this even when the user has no system \`node\` on PATH.
-- \`OD_BIN\`         — absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" …\`. **On Windows PowerShell do NOT use \`& $env:OD_NODE_BIN $env:OD_BIN ...\`** — that call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable. Use \`Start-Process\` with \`-RedirectStandardOutput\` and \`-RedirectStandardError\` instead (see PowerShell block in the Invocation section below).
+- \`OD_BIN\`         — absolute path to the OD CLI script. On POSIX shells run with \`"$OD_NODE_BIN" "$OD_BIN" …\`. **On Windows PowerShell do NOT use \`& $env:OD_NODE_BIN $env:OD_BIN ...\`** — that call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable. Use the \`System.Diagnostics.Process\` helper below instead.
 - \`OD_PROJECT_ID\`  — the active project's id. Pass it as \`--project "$OD_PROJECT_ID"\`.
 - \`OD_PROJECT_DIR\` — the project's files folder (your cwd). Generated files land here.
 - \`OD_DAEMON_URL\`  — base URL of the local daemon, e.g. \`http://127.0.0.1:7456\`.
@@ -250,8 +250,9 @@ Run via your shell tool (Bash on Claude Code, exec on Codex/Gemini, etc.):
 
 **Windows PowerShell only** — the \`&\` call operator silently drops stdout when
 \`OD_NODE_BIN\` points to the packaged Electron executable. Use the complete
-\`Start-Process\` generate/wait helper under **All slow renders** below. It also
-handles renders that complete during the initial \`media generate\` call.
+\`System.Diagnostics.Process\` generate/wait helper under **All slow renders**
+below. It also handles renders that complete during the initial \`media generate\`
+call.
 
 Always quote the prompt value. Use \`--prompt "<full prompt>"\` (or the
 equivalent safe quoting for your shell) — never splice an unquoted user
@@ -422,7 +423,7 @@ waiting silently for a single multi-minute call.
 for image models. \`flux-pro-ultra\` routinely takes 60–180s; \`sora-2\` and
 \`veo-3-fal\` take longer. In the wait loop, exit 2 means "keep polling, not an error."
 
-**Windows PowerShell only** — use \`Start-Process\` with redirection files for both \`media generate\` and \`media wait\`. The \`&\` call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable, so \`$result\` would be empty and the agent would never receive the \`taskId\` JSON.
+**Windows PowerShell only** — use \`System.Diagnostics.Process\` with redirected streams for both \`media generate\` and \`media wait\`. The \`&\` call operator silently drops stdout when \`OD_NODE_BIN\` is the packaged Electron executable, so \`$result\` would be empty and the agent would never receive the \`taskId\` JSON.
 
 \`\`\`powershell
 function ConvertTo-OdProcessArgument {
@@ -441,10 +442,7 @@ function Invoke-OdMedia {
   )
   $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ("od-media-" + [guid]::NewGuid().ToString("N"))
   [void](New-Item -ItemType Directory -Path $tempDirectory -ErrorAction Stop)
-  $out = Join-Path $tempDirectory "stdout.txt"
-  $err = Join-Path $tempDirectory "stderr.txt"
-  $redirectOut = [System.Management.Automation.WildcardPattern]::Escape($out)
-  $redirectErr = [System.Management.Automation.WildcardPattern]::Escape($err)
+  $p = $null
   try {
     if ($PSBoundParameters.ContainsKey("Prompt")) {
       $promptFile = Join-Path $tempDirectory "prompt.txt"
@@ -452,15 +450,25 @@ function Invoke-OdMedia {
       $ArgList += @("--prompt-file", $promptFile)
     }
     $arguments = ($ArgList | ForEach-Object { ConvertTo-OdProcessArgument $_ }) -join ' '
-    $p = Start-Process -FilePath $env:OD_NODE_BIN \`
-      -ArgumentList $arguments \`
-      -NoNewWindow -Wait -PassThru \`
-      -RedirectStandardOutput $redirectOut \`
-      -RedirectStandardError $redirectErr
-    $output = Get-Content -LiteralPath $out -Raw
-    Get-Content -LiteralPath $err | Write-Host  # stream diagnostics
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $env:OD_NODE_BIN
+    $startInfo.Arguments = $arguments
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $p = New-Object System.Diagnostics.Process
+    $p.StartInfo = $startInfo
+    [void]$p.Start()
+    $outputTask = $p.StandardOutput.ReadToEndAsync()
+    $errorTask = $p.StandardError.ReadToEndAsync()
+    $p.WaitForExit()
+    $output = $outputTask.Result
+    $diagnostics = $errorTask.Result
+    if ($diagnostics) { [Console]::Error.Write($diagnostics) }
     return @{ Output = $output; ExitCode = $p.ExitCode }
   } finally {
+    if ($null -ne $p) { $p.Dispose() }
     Remove-Item -LiteralPath $tempDirectory -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
