@@ -132,6 +132,9 @@ const prompt = [
   'Keep this multiline text intact: café, 東京, $literal, `backtick`, & | < > ; ().',
   'Preserve quotes and backslashes exactly: "glass" C:\\references\\final\\',
   'Use a restrained palette, realistic skin texture, and a long editorial composition.',
+  'Repeat this deterministic long-form direction without truncation: foreground texture, midground subject separation, background falloff, restrained highlights, and natural shadow detail.\n'.repeat(
+    64,
+  ),
 ].join('\n');
 const projectId = 'project with "quoted" spaces and trailing\\';
 
@@ -319,6 +322,7 @@ function executePowerShellExample(options: {
 describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
   it('keeps the executable generate/wait workflow identical in both rendered contracts', () => {
     const blocks = renderedContracts.map(({ body }) => workflowBlock(body));
+    expect(prompt.length).toBeGreaterThan(8_000);
     expect(blocks[0]).toBe(blocks[1]);
     expect(blocks[0]).toContain('--prompt-file');
     expect(blocks[0]).toContain('ConvertTo-OdProcessArgument');
