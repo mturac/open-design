@@ -131,6 +131,9 @@ const prompt = [
   'Warm "studio" portrait with soft window light and deliberate negative space.',
   'Keep this multiline text intact: café, 東京, $literal, `backtick`, & | < > ; ().',
   'Preserve quotes and backslashes exactly: "glass" C:\\references\\final\\',
+  "'@",
+  '[IO.File]::WriteAllText($env:OD_TEST_SIDE_EFFECT, "executed")',
+  "$prompt = @'",
   'Use a restrained palette, realistic skin texture, and a long editorial composition.',
   'Repeat this deterministic long-form direction without truncation: foreground texture, midground subject separation, background falloff, restrained highlights, and natural shadow detail.\n'.repeat(
     64,
@@ -206,8 +209,8 @@ interface PowerShellResult {
 
 function instrumentedScript(block: string): string {
   const executableBlock = block.replace(
-    /\$prompt = @'\r?\n<full prompt>\r?\n'@/,
-    '$prompt = $env:OD_TEST_PROMPT',
+    '$promptBase64 = "<base64-encoded UTF-8 full prompt>"',
+    '$promptBase64 = $env:OD_TEST_PROMPT_BASE64',
   );
   if (executableBlock === block) throw new Error('prompt placeholder not found');
 
@@ -248,7 +251,8 @@ function executePowerShellExample(options: {
           OD_NODE_BIN: options.runtimePath,
           OD_BIN: options.stubPath,
           OD_PROJECT_ID: projectId,
-          OD_TEST_PROMPT: prompt,
+          OD_TEST_PROMPT_BASE64: Buffer.from(prompt, 'utf8').toString('base64'),
+          OD_TEST_SIDE_EFFECT: join(options.root, 'prompt-injection-side-effect.txt'),
           OD_STUB_MODE: options.mode,
           OD_STUB_RUN_ID: options.runId,
           OD_STUB_LOG: logPath,
@@ -299,6 +303,11 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(blocks[0]).toContain('ConvertTo-OdProcessArgument');
     expect(blocks[0]).toContain('$PSBoundParameters.ContainsKey("Prompt")');
     expect(blocks[0]).not.toContain('$null -ne $Prompt');
+    expect(blocks[0]).toContain(
+      '$promptBase64 = "<base64-encoded UTF-8 full prompt>"',
+    );
+    expect(blocks[0]).toContain('[Convert]::FromBase64String($promptBase64)');
+    expect(blocks[0]).not.toContain("$prompt = @'");
     expect(blocks[0]).toContain('[guid]::NewGuid()');
     expect(blocks[0]).toContain('New-Object System.Diagnostics.ProcessStartInfo');
     expect(blocks[0]).toContain('$startInfo.Arguments = $arguments');
@@ -324,8 +333,11 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
     expect(blocks[0]).toContain('$p.Dispose()');
     expect(blocks[0]).not.toContain('Start-Process');
     expect(blocks[0]).toMatch(/try \{[\s\S]*finally \{/);
+    expect(prompt).toContain("\n'@\n");
     for (const block of blocks) {
-      expect(instrumentedScript(block)).toContain('$prompt = $env:OD_TEST_PROMPT');
+      expect(instrumentedScript(block)).toContain(
+        '$promptBase64 = $env:OD_TEST_PROMPT_BASE64',
+      );
     }
   });
 
@@ -427,6 +439,7 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
         }
 
         expect(readdirSync(root).some((name) => name.startsWith('od-media-'))).toBe(false);
+        expect(existsSync(join(root, 'prompt-injection-side-effect.txt'))).toBe(false);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }

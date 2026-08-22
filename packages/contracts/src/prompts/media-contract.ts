@@ -186,9 +186,10 @@ function Invoke-OdMedia {
   }
 }
 
-$prompt = @'
-<full prompt>
-'@
+# Encode the complete prompt as single-line UTF-8 base64 before inserting it
+# here so arbitrary prompt text never becomes PowerShell source syntax.
+$promptBase64 = "<base64-encoded UTF-8 full prompt>"
+$prompt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($promptBase64))
 $genArgs = @($env:OD_BIN, "media", "generate", "--project", $env:OD_PROJECT_ID, "--surface", "image", "--model", "gpt-image-2", "--output", "output.png")
 $gen = Invoke-OdMedia -ArgList $genArgs -Prompt $prompt
 if ($gen.ExitCode -ne 0) { throw $gen.Output }
