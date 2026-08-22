@@ -348,9 +348,9 @@ describe('MEDIA_GENERATION_CONTRACT Windows PowerShell guidance', () => {
   });
 
   it.skipIf(process.platform !== 'win32')(
-    'executes immediate and queued workflows in each available Windows PowerShell runtime',
+    'executes immediate and queued workflows in Windows PowerShell and pwsh',
     async () => {
-      expect(powerShellExecutables).toContain('powershell.exe');
+      expect(powerShellExecutables).toEqual(['powershell.exe', 'pwsh.exe']);
       const root = mkdtempSync(join(tmpdir(), 'open design [media] contract '));
       const runtimePath = join(root, 'stub node runtime with spaces.exe');
       const stubPath = join(root, 'stub runtime with spaces.cjs');
