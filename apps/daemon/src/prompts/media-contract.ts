@@ -495,7 +495,13 @@ while ($taskId) {
   if ($wait.ExitCode -eq 0) { $taskId = $null }
   elseif ($wait.ExitCode -ne 2) { throw $wait.Output }
 }
-$finalResult
+$previousOutputEncoding = [Console]::OutputEncoding
+try {
+  [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+  [Console]::Out.WriteLine($finalResult)
+} finally {
+  [Console]::OutputEncoding = $previousOutputEncoding
+}
 \`\`\`
 
 A note on \`fetch failed\` to \`127.0.0.1\`. The OD daemon runs on

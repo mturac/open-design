@@ -201,7 +201,13 @@ while ($taskId) {
   if ($wait.ExitCode -eq 0) { $taskId = $null }
   elseif ($wait.ExitCode -ne 2) { throw $wait.Output }
 }
-$finalResult
+$previousOutputEncoding = [Console]::OutputEncoding
+try {
+  [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+  [Console]::Out.WriteLine($finalResult)
+} finally {
+  [Console]::OutputEncoding = $previousOutputEncoding
+}
 \`\`\`
 
 \`media wait\` exits \`0\` when done, \`2\` when still running, and \`5\`
