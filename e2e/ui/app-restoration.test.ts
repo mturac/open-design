@@ -1278,7 +1278,7 @@ test('[P0] @critical daemon error details persist between failed sends', async (
   }).toPass({ timeout: T.medium });
   await expect(artifactPreviewFrame(page).getByRole('heading', { name: 'Error cross tab' })).toBeVisible();
 
-  await page.goto(`/projects/${projectId}`);
+  await navigateProjectRouteInApp(page, `/projects/${projectId}`);
   await expectWorkspaceReady(page);
   await expect(runErrorCard(page)).toContainText('connection refused');
   await expect(page.locator('.msg.user').getByText('first failing prompt', { exact: true })).toBeVisible();
