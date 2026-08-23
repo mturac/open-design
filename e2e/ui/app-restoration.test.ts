@@ -54,6 +54,21 @@ function isDesignFileUploadResponse(response: Response): boolean {
   );
 }
 
+function isProjectTabsSaveResponse(
+  response: Response,
+  projectId: string,
+  activeTab: string,
+): boolean {
+  const url = new URL(response.url());
+  if (!(
+    response.request().method() === 'PUT'
+    && url.pathname === `/api/projects/${encodeURIComponent(projectId)}/tabs`
+  )) return false;
+
+  const body = response.request().postDataJSON() as { active?: unknown } | null;
+  return body?.active === activeTab;
+}
+
 test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
 });
@@ -242,9 +257,14 @@ test('[P0] switching between projects restores each project workspace to its las
   const alphaSecondaryTab = await ensureFileTabOpen(page, 'alpha-secondary.png');
   await expect(alphaPrimaryTab).toBeVisible();
   await expect(alphaSecondaryTab).toBeVisible();
+  const alphaTabsSaved = page.waitForResponse(
+    (response) => isProjectTabsSaveResponse(response, alphaProjectId, 'alpha-primary.png'),
+    { timeout: T.medium },
+  );
   await alphaPrimaryTab.click();
   await expect(alphaPrimaryTab).toHaveAttribute('aria-selected', 'true');
   await expect(alphaSecondaryTab).toHaveAttribute('aria-selected', 'false');
+  await expect((await alphaTabsSaved).ok()).toBeTruthy();
 
   await leaveProjectForEntry(page);
   await expectProjectsView(page);
@@ -279,9 +299,14 @@ test('[P0] switching between projects restores each project workspace to its las
   const betaSecondaryTab = await ensureFileTabOpen(page, 'beta-secondary.png');
   await expect(betaPrimaryTab).toBeVisible();
   await expect(betaSecondaryTab).toBeVisible();
+  const betaTabsSaved = page.waitForResponse(
+    (response) => isProjectTabsSaveResponse(response, betaProjectId, 'beta-primary.png'),
+    { timeout: T.medium },
+  );
   await betaPrimaryTab.click();
   await expect(betaPrimaryTab).toHaveAttribute('aria-selected', 'true');
   await expect(betaSecondaryTab).toHaveAttribute('aria-selected', 'false');
+  await expect((await betaTabsSaved).ok()).toBeTruthy();
 
   // Revisit by project id (not chrome tab name). createPrototypeProject hard-navs
   // to /projects and can drop earlier chrome tabs from localStorage restore; this
@@ -291,12 +316,20 @@ test('[P0] switching between projects restores each project workspace to its las
   expect((await getCurrentProjectContext(page)).projectId).toBe(alphaProjectId);
   await expect(tabBySuffix(page, 'alpha-primary.png')).toHaveAttribute('aria-selected', 'true');
   await expect(tabBySuffix(page, 'alpha-secondary.png')).toHaveAttribute('aria-selected', 'false');
+  await expectTabSelectionStable(
+    tabBySuffix(page, 'alpha-primary.png'),
+    tabBySuffix(page, 'alpha-secondary.png'),
+  );
 
   await gotoProjectRoute(page, `/projects/${betaProjectId}`);
   await expectWorkspaceReady(page);
   expect((await getCurrentProjectContext(page)).projectId).toBe(betaProjectId);
   await expect(tabBySuffix(page, 'beta-primary.png')).toHaveAttribute('aria-selected', 'true');
   await expect(tabBySuffix(page, 'beta-secondary.png')).toHaveAttribute('aria-selected', 'false');
+  await expectTabSelectionStable(
+    tabBySuffix(page, 'beta-primary.png'),
+    tabBySuffix(page, 'beta-secondary.png'),
+  );
 });
 
 test('[P0] @critical visiting an uploaded design file route restores its tab and file workspace surface', async ({ page }) => {
@@ -1155,8 +1188,14 @@ test('[P0] reloading a project keeps the Design Files entry reachable when it wa
   });
   await expect(tabBySuffix(page, 'restore-me.png')).toBeVisible();
 
+  const { projectId } = await getCurrentProjectContext(page);
+  const designFilesTabSaved = page.waitForResponse(
+    (response) => isProjectTabsSaveResponse(response, projectId, '__design_files__'),
+    { timeout: T.medium },
+  );
   await openAllProjectFiles(page);
   await expectAllProjectFilesActive(page);
+  await expect((await designFilesTabSaved).ok()).toBeTruthy();
 
   // #5517 deleted the preview pane, so a row click leaves the panel for the
   // file's own tab. Making Design Files the last active surface therefore
@@ -1166,6 +1205,7 @@ test('[P0] reloading a project keeps the Design Files entry reachable when it wa
   await page.reload();
   await expect(page.getByTestId('file-workspace')).toBeVisible({ timeout: 20_000 });
   await expectAllProjectFilesActive(page);
+  await expectTabSelectionStable(page.getByTestId('design-files-tab'));
 });
 
 test('[P0] @critical daemon error details persist between failed sends', async ({ page }) => {
@@ -1242,7 +1282,11 @@ test('[P0] @critical daemon error details persist between failed sends', async (
   await expectWorkspaceReady(page);
   await expect(runErrorCard(page)).toContainText('connection refused');
   await expect(page.locator('.msg.user').getByText('first failing prompt', { exact: true })).toBeVisible();
-  await expect(page.getByTestId('chat-composer-input')).toBeVisible();
+  await expectStableCount(async () => (
+    await page.getByTestId('chat-composer-input').isVisible() ? 1 : 0
+  ), 1, {
+    message: 'expected the chat composer to remain visible after conversation hydration',
+  });
 
   await sendPrompt(page, 'second failing prompt');
   await expect(runErrorCard(page)).toContainText('connection refused');
@@ -2603,6 +2647,20 @@ function tabBySuffix(page: Page, name: string): Locator {
     .locator('.ws-tab[role="tab"]')
     .filter({ has: page.locator('.ws-tab-label', { hasText: name }) })
     .first();
+}
+
+async function expectTabSelectionStable(
+  activeTab: Locator,
+  inactiveTab?: Locator,
+): Promise<void> {
+  await expectStableCount(async () => {
+    const active = await activeTab.getAttribute('aria-selected') === 'true';
+    const inactive = !inactiveTab
+      || await inactiveTab.getAttribute('aria-selected') === 'false';
+    return active && inactive ? 1 : 0;
+  }, 1, {
+    message: 'expected workspace tab selection to remain stable after hydration',
+  });
 }
 
 // Uploaded files can land under a deduplicated name, and #5517 image cards
