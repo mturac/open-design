@@ -196,9 +196,10 @@ if ($gen.ExitCode -ne 0) { throw $gen.Output }
 $last = ($gen.Output -split "\`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
 $parsed = $last | ConvertFrom-Json
 $taskId = $parsed.taskId
+if ([string]::IsNullOrWhiteSpace([string]$taskId)) { $taskId = $null }
 $since = if ($null -ne $parsed.nextSince) { $parsed.nextSince } else { 0 }
 $finalResult = $last
-while ($taskId) {
+while ($null -ne $taskId) {
   $waitArgs = @($env:OD_BIN, "media", "wait", $taskId, "--since", $since)
   $wait = Invoke-OdMedia -ArgList $waitArgs
   $finalResult = ($wait.Output -split "\`n" | Where-Object { $_ -ne "" }) | Select-Object -Last 1
