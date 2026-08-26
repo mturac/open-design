@@ -280,7 +280,7 @@ export function seedFromBrand(brand: Brand): SeedToken {
     colorSuccess: successHex,
     ...neutralBases(background?.hex, surface?.hex, foreground?.hex),
     fontFamily: fontStack(brand.typography?.body?.family, brand.typography?.body?.fallbacks ?? []),
-    borderRadius: radius !== null && radius >= 0 ? radius : defaultSeed.borderRadius,
+    borderRadius: radius !== null ? radius : defaultSeed.borderRadius,
   };
 }
 
