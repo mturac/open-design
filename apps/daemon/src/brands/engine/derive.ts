@@ -349,9 +349,12 @@ export function deriveTokens(seed: SeedToken, algorithm: ThemeAlgorithm = "defau
   // --- geometry ---------------------------------------------------------------
   const borderRadius = seed.borderRadius;
   // XS / SM / LG ratios off the seed radius (Ant: ~0.33× / ~0.66× / +2px).
-  const borderRadiusXS = Math.max(1, Math.round(borderRadius / 3)); // 6 -> 2
-  const borderRadiusSM = Math.max(2, Math.round((borderRadius * 2) / 3)); // 6 -> 4
-  const borderRadiusLG = borderRadius + 2; // 6 -> 8
+  // A zero seed is a deliberate square-corner system (#7409): keep every
+  // variant at zero instead of flooring back to rounded values.
+  const squareCorners = borderRadius === 0;
+  const borderRadiusXS = squareCorners ? 0 : Math.max(1, Math.round(borderRadius / 3)); // 6 -> 2
+  const borderRadiusSM = squareCorners ? 0 : Math.max(2, Math.round((borderRadius * 2) / 3)); // 6 -> 4
+  const borderRadiusLG = squareCorners ? 0 : borderRadius + 2; // 6 -> 8
 
   // Compact shrinks the control height; XS/SM/LG keep their ratios off it.
   const controlHeight = isCompact ? 28 : seed.controlHeight;

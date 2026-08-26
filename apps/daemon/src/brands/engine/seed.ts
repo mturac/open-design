@@ -230,9 +230,21 @@ function fontStack(primaryFamily: string | undefined, fallbacks: string[]): stri
  *                    otherwise light foregrounds fall back to black and dark
  *                    canvases fall back to white as before
  *  - fontFamily    ← body face + fallbacks + system tail
- *  - borderRadius  ← parseInt(layout.radius) || 6
+ *  - borderRadius  ← parseRadiusPx(layout.radius), accepting an explicit 0 (#7409)
  *  - everything else ← defaultSeed
  */
+/**
+ * Preserve the legacy positive parseInt path, but accept zero only when the
+ * complete value is an exact zero dimension.
+ */
+function parseRadiusPx(raw: string): number | null {
+  const trimmed = raw.trim().toLowerCase();
+  if (/^0(?:px|em|rem|%)?$/.test(trimmed)) return 0;
+  const parsed = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return null;
+}
+
 export function seedFromBrand(brand: Brand): SeedToken {
   const colors = brand.colors ?? [];
   const NEUTRAL_ROLES = new Set<BrandColor["role"]>([
@@ -258,7 +270,7 @@ export function seedFromBrand(brand: Brand): SeedToken {
   const successHex =
     linkHex && isGreenish(linkHex) ? linkHex : defaultSeed.colorSuccess;
 
-  const radius = parseInt(brand.layout?.radius ?? "", 10);
+  const radius = parseRadiusPx(brand.layout?.radius ?? "");
 
   return {
     ...defaultSeed,
@@ -268,7 +280,7 @@ export function seedFromBrand(brand: Brand): SeedToken {
     colorSuccess: successHex,
     ...neutralBases(background?.hex, surface?.hex, foreground?.hex),
     fontFamily: fontStack(brand.typography?.body?.family, brand.typography?.body?.fallbacks ?? []),
-    borderRadius: Number.isFinite(radius) && radius > 0 ? radius : defaultSeed.borderRadius,
+    borderRadius: radius !== null && radius >= 0 ? radius : defaultSeed.borderRadius,
   };
 }
 
