@@ -163,8 +163,7 @@ test('[P0] delayed active Cloud login stays out of Local setup and resumes after
   });
 
   await seedOnboardingConfig(page, config);
-  await page.goto('/onboarding', { waitUntil: 'domcontentloaded' });
-  await expect(connectLandingHeading(page)).toBeVisible();
+  await gotoOnboarding(page);
 
   await page.getByRole('button', { name: /Local (coding )?agent/i }).click();
   const localPanel = page.locator('.onboarding-view__setup-panel');
