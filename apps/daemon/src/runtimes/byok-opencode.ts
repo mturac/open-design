@@ -1,4 +1,8 @@
 import type { ByokChatProviderConfig } from '@open-design/contracts';
+import {
+  googleGenerativeLanguageBaseUrl,
+  normalizeGoogleModelId,
+} from '../integrations/google-models.js';
 
 export const BYOK_OPENCODE_AGENT_ID = 'byok-opencode';
 export const BYOK_OPENCODE_PROVIDER_ID = 'open-design-byok';
@@ -62,7 +66,11 @@ export function buildOpenCodeByokProviderConfig(
   if (!rawModel || rawModel.toLowerCase() === 'default') return null;
   if (!baseUrl) return null;
 
-  const modelId = opencodeByokModelId(rawModel);
+  const runModel =
+    protocol === 'google'
+      ? `models/${normalizeGoogleModelId(rawModel)}`
+      : rawModel;
+  const modelId = opencodeByokModelId(runModel);
   if (!modelId) return null;
 
   const providerEntry = buildProviderEntry(
@@ -77,7 +85,7 @@ export function buildOpenCodeByokProviderConfig(
         name: 'OpenDesign BYOK',
         ...providerEntry,
         models: {
-          [rawModel]: {
+          [runModel]: {
             name: rawModel,
             limit: {
               context: DEFAULT_CONTEXT_TOKEN_LIMIT,
@@ -109,8 +117,12 @@ function normalizeProviderBaseUrl(
   if (protocol === 'openai' && isExactOrigin(trimmed, 'https://api.openai.com')) {
     return 'https://api.openai.com/v1';
   }
-  if (protocol === 'google' && isExactOrigin(trimmed, 'https://generativelanguage.googleapis.com')) {
-    return 'https://generativelanguage.googleapis.com/v1beta';
+  if (protocol === 'google') {
+    try {
+      return `${googleGenerativeLanguageBaseUrl(trimmed)}/v1beta`;
+    } catch {
+      return trimmed;
+    }
   }
   if (protocol === 'ollama') {
     if (isExactOrigin(trimmed, 'https://ollama.com')) return 'https://ollama.com/v1';
