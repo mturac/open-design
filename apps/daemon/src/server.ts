@@ -496,7 +496,17 @@ import { importFigmaFromBytes } from './figma/figma-import.js';
 import { renderDesignSystemPreview } from './design-systems/preview.js';
 import { renderDesignSystemShowcase } from './design-systems/showcase.js';
 import { createChatRunService } from './runtimes/runs.js';
+import {
+  createAmrTerminalReportDeliveryService,
+  createAmrTerminalReportFinalizer,
+  createAmrTerminalReportOutboxStore,
+  type AmrTerminalReportDeliveryService,
+} from './storage/amr-terminal-report-outbox.js';
 import { createInternalRunCreationService } from './services/internal-run-service.js';
+import {
+  createRunAnalyticsLifecycle,
+  inheritedRunLineageHints,
+} from './services/run-analytics-lifecycle.js';
 import {
   createOdNextRunInputProjection,
   OdNextTaskInputSnapshotError,
@@ -2824,6 +2834,15 @@ export interface StartServerOptions {
   odNextComplexProductionResolver?: OdNextComplexProductionResolver | null;
 }
 
+export function startAmrTerminalReportDeliveryAfterBind(
+  delivery: Pick<AmrTerminalReportDeliveryService, 'start'>,
+  boundPort: number | null,
+): boolean {
+  if (!Number.isInteger(boundPort) || Number(boundPort) <= 0) return false;
+  delivery.start();
+  return true;
+}
+
 export interface StartServerResult {
   url: string;
   server: import('node:http').Server;
@@ -3155,6 +3174,11 @@ export async function startServer({
     next();
   });
   const db = openDatabase(PROJECT_ROOT, { dataDir: RUNTIME_DATA_DIR });
+  const amrTerminalReportOutbox = createAmrTerminalReportOutboxStore(db);
+  const amrTerminalReportDelivery = createAmrTerminalReportDeliveryService({
+    store: amrTerminalReportOutbox,
+    env: { ...process.env, OD_DATA_DIR: RUNTIME_DATA_DIR },
+  });
   const commentAnchorRepair = repairTeamProjectCommentAnchorConversations(db);
   if (commentAnchorRepair.created > 0) {
     console.warn(
@@ -7483,6 +7507,7 @@ export async function startServer({
         if (!run.sideEffectLedger) run.sideEffectLedger = createRunSideEffectLedger();
         foldEventIntoRunSideEffectLedger(run.sideEffectLedger, record);
       },
+      onTerminal: createAmrTerminalReportFinalizer(amrTerminalReportOutbox),
       beforeFinish: (run, status) => {
         if (status !== 'failed' && status !== 'canceled') return;
         try {
@@ -7501,11 +7526,6 @@ export async function startServer({
     getAppVersion: () => telemetry.getCachedAppVersion()?.version ?? '0.0.0',
     readAnalyticsContext,
   };
-  const internalRunCreation = createInternalRunCreationService({
-    runs: design.runs,
-    claimAssistantMessage: (run, options) =>
-      pinAssistantMessageOnRunCreate(db, run, options),
-  });
   const taskObservationRollout = createTaskObservationRolloutService({
     db,
     dataDir: RUNTIME_DATA_DIR,
@@ -7545,6 +7565,7 @@ export async function startServer({
     appVersionInfo: telemetry.getCachedAppVersion(),
     db,
     reportLangfuse: reportRunCompletedFromDaemon,
+    finalizeTerminalLocally: createAmrTerminalReportFinalizer(amrTerminalReportOutbox),
     taskObservationModeForRun: (runId) => taskObservationRollout.modeForRun(runId),
     taskObservationRepresentationForRun: (runId) =>
       taskObservationRollout.representationForRun(runId),
@@ -7627,6 +7648,29 @@ export async function startServer({
     timer.unref?.();
   };
 
+  // Every physical Run is started through this service so the analytics
+  // lifecycle is installed once, for whoever asked for the Run — an HTTP
+  // client, an OD Next automatic continuation, a scheduled Automation, or a
+  // live-artifact refresh. Starting a Run any other way drops its analytics
+  // silently, which is what OPEND-2365 was.
+  const runAnalyticsLifecycle = createRunAnalyticsLifecycle({
+    db,
+    design,
+    paths: { PROJECTS_DIR, RUNTIME_DATA_DIR },
+    agents: { detectAgents },
+    telemetry: {
+      reportRunCompletionTelemetryFallback,
+      resolveRunProjectKindForAnalytics,
+      runArtifactBaselines,
+      runRetryEventsForAnalytics,
+    },
+  });
+  const internalRunCreation = createInternalRunCreationService({
+    runs: design.runs,
+    claimAssistantMessage: (run, options) =>
+      pinAssistantMessageOnRunCreate(db, run, options),
+    analyticsLifecycle: runAnalyticsLifecycle,
+  });
   const reportFeedback = telemetry.reportFeedback;
 
   // DNS-aware wrapper. The sync `validateBaseUrl` only inspects the literal
@@ -7686,7 +7730,26 @@ export async function startServer({
 
   app.get('/api/health', async (_req, res) => {
     const versionInfo = await readCurrentAppVersionInfo();
-    res.json({ ok: true, version: versionInfo.version });
+    const {
+      pending,
+      delivered,
+      unsupported,
+      terminalFailed,
+      oldestPendingAgeMs,
+    } = amrTerminalReportOutbox.diagnostics();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      version: versionInfo.version,
+      amrTerminalReporter: {
+        status: 'active',
+        pending,
+        delivered,
+        unsupported,
+        terminalFailed,
+        oldestPendingAgeMs,
+      },
+    });
   });
 
   app.get('/api/ready', async (_req, res) => {
@@ -7783,6 +7846,13 @@ export async function startServer({
     requireLocalDaemonRequest,
     composio: composioConnectorProvider,
   });
+
+  // Detailed terminal-report activity is local diagnostics, not public health.
+  app.get(
+    '/api/diagnostics/amr-terminal-reports',
+    requireLocalDaemonRequest,
+    (_req, res) => res.json(amrTerminalReportOutbox.diagnostics()),
+  );
 
   // Gate the diagnostics export behind requireLocalDaemonRequest so it stays
   // unreachable when daemon binds to a non-loopback address (Tailscale,
@@ -15615,6 +15685,13 @@ export async function startServer({
                   .digest('hex');
                 const meta = {
                   ...chatBody,
+                  // One logical task, several physical Runs. The chain is only
+                  // reassemblable downstream if each Run reports the lineage of
+                  // the Run that caused it.
+                  analyticsHints: {
+                    ...(chatBody.analyticsHints ?? {}),
+                    ...inheritedRunLineageHints(run, chatBody, taskRunIndex),
+                  },
                   projectId: strategyTaskAtStart.projectId,
                   conversationId: strategyTaskAtStart.conversationId,
                   agentId: strategyTaskAtStart.selectedAgentId,
@@ -15704,24 +15781,38 @@ export async function startServer({
             : null,
         });
         reconcileAssistantMessageOnRunEnd(db, design.runs, continuation.run);
-        internalRunCreation.start(continuation.run, async () => {
-          try {
-            return await startChatRun(continuation.chatBody, continuation.run);
-          } catch (error) {
-            reconcileStrategyTaskRunTerminal(db, {
-              runId: continuation.run.id,
-              status: 'failed',
-            });
-            const latestTask = getStrategyTaskExecutionByRunId(db, continuation.run.id);
-            if (latestTask) {
-              continuation.run.strategyTask = projectStrategyTask(
-                latestTask,
-                continuation.run.id,
-              );
+        internalRunCreation.start(
+          continuation.run,
+          {
+            // The continuation is composed from the source Run's body, so it
+            // carries the same project, agent, plugin and Skill facts. Identity
+            // is inherited rather than re-derived: nobody made a request for
+            // this Run, and the task it continues is the user's.
+            body: continuation.chatBody,
+            requestAnalyticsContext:
+              run.analyticsContext ?? run.analyticsRecovery?.context ?? null,
+            creationKind: 'created',
+            resumed: false,
+          },
+          async () => {
+            try {
+              return await startChatRun(continuation.chatBody, continuation.run);
+            } catch (error) {
+              reconcileStrategyTaskRunTerminal(db, {
+                runId: continuation.run.id,
+                status: 'failed',
+              });
+              const latestTask = getStrategyTaskExecutionByRunId(db, continuation.run.id);
+              if (latestTask) {
+                continuation.run.strategyTask = projectStrategyTask(
+                  latestTask,
+                  continuation.run.id,
+                );
+              }
+              throw error;
             }
-            throw error;
-          }
-        });
+          },
+        );
       }
       } finally {
         // Best-effort cleanup of the per-run agy log file on every close
@@ -15880,7 +15971,7 @@ export async function startServer({
     }
 
     const modelPrefs = appConfig.agentModels?.[agentId] ?? {};
-    design.runs.start(run, () => startChatRun({
+    const orbitRunBody = {
       agentId,
       projectId,
       conversationId: run.conversationId,
@@ -15901,7 +15992,16 @@ export async function startServer({
         'Do not ask follow-up questions, do not emit <question-form>, and do not wait for user input. This run is unattended; pick reasonable defaults and complete the artifact.',
         'Keep connector credentials and OD_TOOL_TOKEN private; never print or persist secrets.',
       ].join('\n'),
-    }, run));
+    };
+    // Nothing asked for this Run: it is a background refresh with no caller to
+    // attribute it to, so the analytics lifecycle finds no identity and stays
+    // silent. It still goes through the one start path, so the day a
+    // background Run gets an identity, it reports without further plumbing.
+    internalRunCreation.start(
+      run,
+      { body: orbitRunBody, requestAnalyticsContext: null },
+      () => startChatRun(orbitRunBody, run),
+    );
 
     const completion = (async () => {
       const finalStatus = await design.runs.wait(run);
@@ -16298,7 +16398,7 @@ export async function startServer({
       // surface phantom conversations (#1361).
       if (conversationCreatedEvent) emitProjectEvent(projectId, conversationCreatedEvent);
       const persistedDesignSystemId = getProject(db, projectId)?.designSystemId ?? null;
-      design.runs.start(run, () => startChatRun({
+      const routineRunBody = {
         agentId,
         projectId,
         conversationId: run.conversationId,
@@ -16315,7 +16415,14 @@ export async function startServer({
           `You are running an unattended scheduled routine named "${routine.name}".`,
           'Do not ask follow-up questions, do not emit <question-form>, and do not wait for user input. Pick reasonable defaults and finish the task.',
         ].join('\n'),
-      }, run));
+      };
+      // A scheduled Automation has no caller either — see the live-artifact
+      // note above. Same start path, same reason.
+      internalRunCreation.start(
+        run,
+        { body: routineRunBody, requestAnalyticsContext: null },
+        () => startChatRun(routineRunBody, run),
+      );
     };
 
     // Tear-down for the case where the durable routine_run row was never
@@ -16530,6 +16637,7 @@ export async function startServer({
     };
     const cleanupDaemonBackgroundWork = () => {
       clearTerminalTelemetryFallbackTimers();
+      amrTerminalReportDelivery.stop();
       telemetry.disposeFatalHandlers();
       composioConnectorProvider.stopCatalogRefreshLoop();
       orbitService.stop();
@@ -16546,6 +16654,7 @@ export async function startServer({
       if (daemonShutdownStarted) return;
       daemonShutdownStarted = true;
       daemonShuttingDown = true;
+      amrTerminalReportDelivery.stop();
       clearTerminalTelemetryFallbackTimers();
       await design.runs.shutdownActive({ graceMs: resolveChatRunShutdownGraceMs() });
       await terminalService.shutdownActive();
@@ -16596,6 +16705,7 @@ export async function startServer({
           return;
         }
         resolvedPort = boundPort;
+        startAmrTerminalReportDeliveryAfterBind(amrTerminalReportDelivery, boundPort);
         // When binding to all interfaces report localhost for local callers;
         // when binding to a specific address (e.g. a Tailscale IP) report that
         // address so remote callers and the sidecar use the correct URL.

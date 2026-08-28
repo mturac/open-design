@@ -530,6 +530,7 @@ function durableRunState(run) {
     status: run.status,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
+    terminalAt: run.terminalAt ?? null,
     exitCode: run.exitCode,
     signal: run.signal,
     error: run.error,
@@ -674,18 +675,42 @@ export function createChatRunService({
   // hook here covers startup failures and daemon shutdown in addition to the
   // normal child-close path.
   beforeFinish = null,
+  // Optional synchronous terminal hook. It runs after the terminal state is
+  // durable but before the terminal SSE event is published, so local outbox
+  // writes share the exact terminal timestamp without delaying on delivery.
+  onTerminal = null,
 }) {
   const runs = new Map();
   const runIdsByClientRequestId = new Map();
   const runIdsByPluginWorkflowId = new Map();
 
+  const finalizeTerminalLocally = (run, status, terminalAt) => {
+    if (!onTerminal) return;
+    try {
+      onTerminal(run, status, terminalAt);
+    } catch (error) {
+      console.warn('[runs] terminal local finalizer failed', error);
+    }
+  };
+
+  const backfillDurableTerminal = (state) => {
+    if (!TERMINAL_RUN_STATUSES.has(state?.status)) return;
+    const terminalAt = Number.isFinite(state.terminalAt)
+      ? state.terminalAt
+      : state.updatedAt;
+    if (!Number.isFinite(terminalAt)) return;
+    finalizeTerminalLocally(state, state.status, terminalAt);
+  };
+
   if (runsLogDir) {
     try {
       for (const entry of fs.readdirSync(runsLogDir, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
-        const state = readDurableRunState(path.join(runsLogDir, entry.name, 'state.json'));
+        const statePath = path.join(runsLogDir, entry.name, 'state.json');
+        const state = readDurableRunState(statePath);
+        if (!state) continue;
         if (
-          typeof state?.clientRequestId === 'string'
+          typeof state.clientRequestId === 'string'
           && state.clientRequestId
           && typeof state.id === 'string'
         ) {
@@ -714,11 +739,15 @@ export function createChatRunService({
     const interruptedAfterRestart =
       interruptDurableRunAfterDaemonRestart(state);
     if (interruptedAfterRestart) atomicWriteJson(statePath, state);
+    backfillDurableTerminal(state);
     if (!TERMINAL_RUN_STATUSES.has(state.status)) return null;
     const eventsLogPath = path.join(runsLogDir, id, 'events.jsonl');
     const events = readDurableRunEvents(eventsLogPath);
-    if (interruptedAfterRestart) {
-      const timestamp = state.updatedAt;
+    if (
+      interruptedAfterRestart
+      || state.terminalRecoveryReason === 'daemon_restart'
+    ) {
+      const timestamp = state.terminalAt ?? state.updatedAt;
       const nextEventId =
         events.reduce((max, record) => Math.max(max, record.id), 0) + 1;
       events.push(
@@ -741,6 +770,7 @@ export function createChatRunService({
             code: 1,
             signal: null,
             status: 'failed',
+            terminalAt: timestamp,
             resumable: false,
             endedWithUnfinishedWork: Boolean(state.endedWithUnfinishedWork),
           },
@@ -855,6 +885,7 @@ export function createChatRunService({
       status: 'queued',
       createdAt: now,
       updatedAt: now,
+      terminalAt: null,
       events: [],
       nextEventId: 1,
       clients: new Set(),
@@ -1072,6 +1103,7 @@ export function createChatRunService({
     run.cleanupGeneration = (run.cleanupGeneration ?? 0) + 1;
     run.status = 'queued';
     run.updatedAt = resumedAt;
+    run.terminalAt = null;
     run.exitCode = null;
     run.signal = null;
     run.error = null;
@@ -1163,7 +1195,7 @@ export function createChatRunService({
     }
   };
 
-  const emit = (run, event, data) => {
+  const emit = (run, event, data, timestamp = Date.now(), persistLifecycle = true) => {
     // Once a terminal verdict is waiting only on process-tree quiescence, the
     // attempt no longer owns transcript or error state. Shutdown bytes and
     // duplicate child callbacks must not overwrite the classified verdict
@@ -1176,7 +1208,7 @@ export function createChatRunService({
       if (details.errorCode) run.errorCode = details.errorCode;
     }
     const id = run.nextEventId++;
-    const record = { id, event, data, timestamp: Date.now() };
+    const record = { id, event, data, timestamp };
     // Fold committed side effects BEFORE the ring buffer can drop this record,
     // so the finalization-time verdict survives truncation of run.events.
     if (onEventEmitted) {
@@ -1184,11 +1216,11 @@ export function createChatRunService({
     }
     run.events.push(record);
     if (run.events.length > maxEvents) run.events.splice(0, run.events.length - maxEvents);
-    run.updatedAt = Date.now();
+    run.updatedAt = timestamp;
     // State writes are synchronous so they survive process termination. Keep
     // them on lifecycle boundaries only: agent/text deltas can arrive many
     // times per second and are already streamed to events.jsonl.
-    if (event === 'start' || event === 'error' || event === 'end') persistState(run);
+    if (persistLifecycle && (event === 'start' || event === 'error' || event === 'end')) persistState(run);
     const stream = ensureLogStream(run);
     if (stream) {
       try {
@@ -1219,6 +1251,7 @@ export function createChatRunService({
     status: run.status,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
+    terminalAt: run.terminalAt ?? null,
     cancelRequested: !!run.cancelRequested,
     cancelOrigin: run.cancelOrigin ?? null,
     terminalTrigger: run.terminalTrigger ?? null,
@@ -1281,10 +1314,12 @@ export function createChatRunService({
   const commitFinish = (run, status, code: number | null = null, signal: string | null = null) => {
     if (TERMINAL_RUN_STATUSES.has(run.status)) return;
     if (beforeFinish) beforeFinish(run, status, code, signal);
+    const terminalAt = Date.now();
     run.status = status;
     run.exitCode = code;
     run.signal = signal;
-    run.updatedAt = Date.now();
+    run.updatedAt = terminalAt;
+    run.terminalAt = terminalAt;
     // Derive the work-completeness flag once, at the single terminal choke point,
     // from the signals the agent-event handler folded onto the run. Uses the
     // canonical predicate so it can never diverge from the web chat footer
@@ -1301,6 +1336,10 @@ export function createChatRunService({
       Boolean(run.truncatedMidTurn)
       || (!strategyTaskProvesDelivery(run.strategyTask)
         && todoSnapshotHasUnfinishedWork(run.lastTodoSnapshot));
+    // Commit the terminal Run snapshot before exposing its terminal event. The
+    // optional outbox hook is local-only and synchronous by contract.
+    persistState(run);
+    finalizeTerminalLocally(run, status, terminalAt);
     // Release run-scoped resources the starter registered (e.g. the minted
     // tool-token grant + agent event-sink entries). This runs on EVERY
     // terminal path — including a startup throw that never reached the child
@@ -1311,10 +1350,15 @@ export function createChatRunService({
       run.onFinalize = null;
       try { finalize(); } catch { /* best-effort */ }
     }
+    // Terminal finalizers can add artifact metadata after the authoritative
+    // terminal timestamp snapshot. Persist once more before publishing `end`
+    // so restart hydration sees the same artifact result as live clients.
+    persistState(run);
     emit(run, 'end', {
       code,
       signal,
       status,
+      terminalAt,
       resumable: run.resumable ?? false,
       endedWithUnfinishedWork: run.endedWithUnfinishedWork,
       ...(Number.isFinite(run.artifactCount) ? { artifactCount: run.artifactCount } : {}),
@@ -1322,7 +1366,7 @@ export function createChatRunService({
       failureCategory: run.failureCategory ?? null,
       failureDetail: run.failureDetail ?? null,
       ...(run.strategyTask ? { strategyTask: run.strategyTask } : {}),
-    });
+    }, terminalAt, false);
     for (const sse of run.clients) sse.end();
     run.clients.clear();
     for (const waiter of run.waiters) waiter(statusBody(run));
