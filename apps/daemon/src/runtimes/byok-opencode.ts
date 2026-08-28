@@ -1,8 +1,5 @@
 import type { ByokChatProviderConfig } from '@open-design/contracts';
-import {
-  googleGenerativeLanguageBaseUrl,
-  normalizeGoogleModelId,
-} from '../integrations/google-models.js';
+import { normalizeGoogleModelId } from '../integrations/google-models.js';
 
 export const BYOK_OPENCODE_AGENT_ID = 'byok-opencode';
 export const BYOK_OPENCODE_PROVIDER_ID = 'open-design-byok';
@@ -119,7 +116,7 @@ function normalizeProviderBaseUrl(
   }
   if (protocol === 'google') {
     try {
-      return `${googleGenerativeLanguageBaseUrl(trimmed)}/v1beta`;
+      return normalizeGoogleRunBaseUrl(trimmed);
     } catch {
       return trimmed;
     }
@@ -130,6 +127,19 @@ function normalizeProviderBaseUrl(
     if (trimmed.endsWith('/api')) return `${trimmed.slice(0, -4)}/v1`;
   }
   return trimmed;
+}
+
+function normalizeGoogleRunBaseUrl(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  url.search = '';
+  url.hash = '';
+  const pathname = url.pathname.replace(/\/+$/, '');
+  if (pathname && /\/v\d+(?:alpha|beta)?(?:\/|$)/i.test(pathname)) {
+    url.pathname = pathname;
+    return url.toString();
+  }
+  url.pathname = pathname ? `${pathname}/v1beta` : '/v1beta';
+  return url.toString();
 }
 
 function requiresApiKey(

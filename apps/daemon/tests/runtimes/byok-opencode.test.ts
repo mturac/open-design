@@ -283,6 +283,30 @@ describe('byok-opencode runtime config', () => {
         },
       },
     });
+
+    const withV1alpha = buildOpenCodeByokProviderConfig(
+      { protocol: 'google', apiKey: 'gk', baseUrl: 'https://api.ofox.io/gemini/v1alpha' },
+      'google/gemini-3.7-flash',
+    );
+    expect(withV1alpha?.config).toMatchObject({
+      provider: {
+        [BYOK_OPENCODE_PROVIDER_ID]: {
+          options: { baseURL: 'https://api.ofox.io/gemini/v1alpha' },
+        },
+      },
+    });
+
+    const withV1 = buildOpenCodeByokProviderConfig(
+      { protocol: 'google', apiKey: 'gk', baseUrl: 'https://api.ofox.io/gemini/v1' },
+      'google/gemini-3.7-flash',
+    );
+    expect(withV1?.config).toMatchObject({
+      provider: {
+        [BYOK_OPENCODE_PROVIDER_ID]: {
+          options: { baseURL: 'https://api.ofox.io/gemini/v1' },
+        },
+      },
+    });
   });
 
   it('preserves models/ routing for vendor-prefixed Gemini model ids on third-party gateways', () => {
